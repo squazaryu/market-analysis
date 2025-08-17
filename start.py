@@ -12,7 +12,8 @@ from pathlib import Path
 def check_dependencies():
     """Проверяет и устанавливает зависимости"""
     try:
-        import flask, pandas, requests, beautifulsoup4, plotly
+        import flask, pandas, requests, plotly
+        from bs4 import BeautifulSoup  # Правильная проверка beautifulsoup4
         print("✅ Все зависимости уже установлены")
         return True
     except ImportError as e:

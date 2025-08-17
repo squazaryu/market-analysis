@@ -139,6 +139,7 @@ def create_initial_data():
                 })
             
             df = pd.DataFrame(simple_data)
+            from datetime import datetime
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f'enhanced_etf_data_{timestamp}.csv'
             df.to_csv(filename, index=False, encoding='utf-8')

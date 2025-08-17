@@ -16,15 +16,3 @@ openpyxl>=3.0.0
 # Для улучшенной обработки HTTP запросов
 urllib3>=1.26.0
 certifi>=2022.0.0
-
-# Для логирования
-logging
-
-# Системные зависимости Python (обычно уже установлены)
-datetime
-pathlib
-json
-re
-time
-os
-sys
