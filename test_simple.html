@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Тест графиков</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <h1>Тест загрузки графиков</h1>
+    <div id="test-chart" style="height: 400px;"></div>
+    
+    <script>
+        console.log('🚀 Тестируем загрузку...');
+        
+        // Тестируем API
+        fetch('http://localhost:5005/api/chart')
+          .then(response => {
+            console.log('API ответ:', response.status);
+            return response.json();
+          })
+          .then(data => {
+            console.log('Данные получены:', data);
+            if (data.data && data.layout) {
+              Plotly.newPlot('test-chart', data.data, data.layout);
+              console.log('✅ График загружен успешно!');
+            } else {
+              console.error('❌ Неверный формат данных');
+            }
+          })
+          .catch(error => {
+            console.error('❌ Ошибка:', error);
+          });
+    </script>
+</body>
+</html>

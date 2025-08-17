@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Отладка дашборда</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        .chart { height: 400px; border: 1px solid #ccc; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Отладка дашборда</h1>
+    
+    <div id="risk-return-plot" class="chart"></div>
+    <div id="capital-flows-plot" class="chart"></div>
+    
+    <div id="log"></div>
+    
+    <script>
+        function log(message) {
+            console.log(message);
+            document.getElementById('log').innerHTML += '<div>' + message + '</div>';
+        }
+        
+        log('🚀 Начинаем отладку...');
+        
+        // Тест 1: График риск-доходность
+        log('📊 Загружаем график риск-доходность...');
+        fetch('http://localhost:5005/api/chart')
+          .then(response => {
+            log('✅ API chart ответил: ' + response.status);
+            return response.json();
+          })
+          .then(data => {
+            log('📊 Данные получены, создаем график...');
+            if (data.data && data.layout) {
+              Plotly.newPlot('risk-return-plot', data.data, data.layout, {responsive: true});
+              log('✅ График риск-доходность создан!');
+            } else {
+              log('❌ Неверный формат данных');
+            }
+          })
+          .catch(error => {
+            log('❌ Ошибка загрузки графика: ' + error);
+          });
+        
+        // Тест 2: Потоки капитала
+        log('💰 Загружаем потоки капитала...');
+        fetch('http://localhost:5005/api/capital-flows')
+          .then(response => {
+            log('✅ API capital-flows ответил: ' + response.status);
+            return response.json();
+          })
+          .then(data => {
+            log('💰 Данные получены, создаем график...');
+            if (data.data && data.layout) {
+              Plotly.newPlot('capital-flows-plot', data.data, data.layout, {responsive: true});
+              log('✅ График потоков капитала создан!');
+            } else {
+              log('❌ Неверный формат данных');
+            }
+          })
+          .catch(error => {
+            log('❌ Ошибка загрузки потоков: ' + error);
+          });
+    </script>
+</body>
+</html>
