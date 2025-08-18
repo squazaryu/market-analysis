@@ -1188,7 +1188,17 @@ HTML_TEMPLATE = """
                     const row = `
                         <tr>
                             <td><strong>${etf.ticker}</strong></td>
-                            <td title="${etf.name}">${(etf.name || '').length > 25 ? (etf.name || '').substr(0, 25) + '...' : (etf.name || 'N/A')}</td>
+                            <td title="${etf.name}">
+                                ${etf.investfunds_url ? 
+                                    `<a href="${etf.investfunds_url}" target="_blank" rel="noopener noreferrer" 
+                                       class="text-decoration-none text-primary fw-medium" 
+                                       title="Перейти на страницу фонда на InvestFunds.ru">
+                                        ${(etf.name || '').length > 25 ? (etf.name || '').substr(0, 25) + '...' : (etf.name || 'N/A')}
+                                        <i class="fas fa-external-link-alt ms-1" style="font-size: 0.8em;"></i>
+                                     </a>` 
+                                    : (etf.name || '').length > 25 ? (etf.name || '').substr(0, 25) + '...' : (etf.name || 'N/A')
+                                }
+                            </td>
                             <td><span class="badge ${categoryBadge}" style="font-size: 0.75em;">${etf.category}</span></td>
                             <td><span class="${navClass}">${etf.nav_billions ? etf.nav_billions.toFixed(1) : '0.0'}</span></td>
                             <td>${etf.unit_price ? etf.unit_price.toFixed(1) : '0.0'}</td>
@@ -2273,6 +2283,18 @@ def api_table():
             # Стоимость пая (приоритет: реальные данные, затем MOEX)
             unit_price = fund.get('real_unit_price', fund.get('last_price', fund.get('current_price', 0)))
             
+            # Получаем URL фонда на investfunds.ru
+            ticker = fund.get('ticker', '')
+            investfunds_url = ''
+            try:
+                from investfunds_parser import InvestFundsParser
+                parser = InvestFundsParser()
+                fund_id = parser.fund_mapping.get(ticker)
+                if fund_id:
+                    investfunds_url = f"https://investfunds.ru/funds/{fund_id}/"
+            except Exception:
+                pass
+            
             fund_data = {
                 'ticker': fund.get('ticker', ''),
                 'name': fund.get('full_name', fund.get('short_name', fund.get('name', ''))),
@@ -2290,7 +2312,8 @@ def api_table():
                 'other_expenses': round(fund.get('other_expenses', 0), 3),
                 'total_expenses': round(fund.get('total_expenses', 0), 3),
                 'depositary_name': fund.get('depositary_name', ''),
-                'data_source': fund.get('data_source', 'расчетное')
+                'data_source': fund.get('data_source', 'расчетное'),
+                'investfunds_url': investfunds_url
             }
             
             table_data.append(fund_data)
