@@ -4,7 +4,7 @@
 Все функции работают гарантированно
 """
 
-from flask import Flask, render_template_string, jsonify
+from flask import Flask, render_template_string, jsonify, request
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -681,28 +681,99 @@ HTML_TEMPLATE = """
         <div class="row mb-4">
             <div class="col-12">
                 <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5>📋 Топ ETF</h5>
-                        <div>
-                            <input type="text" class="form-control form-control-sm" id="search-input" 
-                                   placeholder="Поиск..." style="width: 200px;" onkeyup="searchTable()">
+                    <div class="card-header">
+                        <div class="row align-items-center">
+                            <div class="col-md-3">
+                                <h5 class="mb-0">📋 Все ETF фонды</h5>
+                            </div>
+                            <div class="col-md-9">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <select class="form-select form-select-sm" id="table-limit" onchange="updateTable()">
+                                            <option value="20" selected>Показать 20</option>
+                                            <option value="5">Показать 5</option>
+                                            <option value="10">Показать 10</option>
+                                            <option value="25">Показать 25</option>
+                                            <option value="50">Показать 50</option>
+                                            <option value="96">Показать все (96)</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <select class="form-select form-select-sm" id="table-sort" onchange="updateTable()">
+                                            <option value="nav" selected>Сортировка по СЧА</option>
+                                            <option value="return">По доходности</option>
+                                            <option value="volatility">По волатильности</option>
+                                            <option value="sharpe">По Sharpe</option>
+                                            <option value="price">По цене пая</option>
+                                            <option value="mgmt_fee">По комиссии УК</option>
+                                            <option value="total_fee">По общим расходам</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <select class="form-select form-select-sm" id="table-order" onchange="updateTable()">
+                                            <option value="desc" selected>↓ Убывание</option>
+                                            <option value="asc">↑ Возрастание</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <input type="text" class="form-control form-control-sm" id="search-input" 
+                                               placeholder="🔍 Поиск по названию или тикеру..." onkeyup="searchTable()">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
                             <table class="table table-hover" id="etf-table">
-                                <thead>
+                                <thead class="table-dark">
                                     <tr>
-                                        <th>Тикер</th>
-                                        <th>Название</th>
+                                        <th>
+                                            <button class="btn btn-sm btn-outline-light border-0" onclick="sortTable('ticker')" title="Сортировка по тикеру">
+                                                Тикер <i class="fas fa-sort"></i>
+                                            </button>
+                                        </th>
+                                        <th>
+                                            <button class="btn btn-sm btn-outline-light border-0" onclick="sortTable('name')" title="Сортировка по названию">
+                                                Название <i class="fas fa-sort"></i>
+                                            </button>
+                                        </th>
                                         <th>Категория</th>
-                                        <th>СЧА (млрд ₽)</th>
-                                        <th>Цена пая (₽)</th>
-                                        <th>Комиссия УК (%)</th>
-                                        <th>Общие расходы (%)</th>
-                                        <th>Доходность</th>
-                                        <th>Волатильность</th>
-                                        <th>Sharpe</th>
+                                        <th>
+                                            <button class="btn btn-sm btn-outline-light border-0" onclick="sortTable('nav')" title="Сортировка по СЧА">
+                                                СЧА (млрд ₽) <i class="fas fa-sort"></i>
+                                            </button>
+                                        </th>
+                                        <th>
+                                            <button class="btn btn-sm btn-outline-light border-0" onclick="sortTable('price')" title="Сортировка по цене пая">
+                                                Цена пая (₽) <i class="fas fa-sort"></i>
+                                            </button>
+                                        </th>
+                                        <th>
+                                            <button class="btn btn-sm btn-outline-light border-0" onclick="sortTable('mgmt_fee')" title="Сортировка по комиссии УК">
+                                                Комиссия УК (%) <i class="fas fa-sort"></i>
+                                            </button>
+                                        </th>
+                                        <th>
+                                            <button class="btn btn-sm btn-outline-light border-0" onclick="sortTable('total_fee')" title="Сортировка по общим расходам">
+                                                Общие расходы (%) <i class="fas fa-sort"></i>
+                                            </button>
+                                        </th>
+                                        <th>
+                                            <button class="btn btn-sm btn-outline-light border-0" onclick="sortTable('return')" title="Сортировка по доходности">
+                                                Доходность <i class="fas fa-sort"></i>
+                                            </button>
+                                        </th>
+                                        <th>
+                                            <button class="btn btn-sm btn-outline-light border-0" onclick="sortTable('volatility')" title="Сортировка по волатильности">
+                                                Волатильность <i class="fas fa-sort"></i>
+                                            </button>
+                                        </th>
+                                        <th>
+                                            <button class="btn btn-sm btn-outline-light border-0" onclick="sortTable('sharpe')" title="Сортировка по Sharpe">
+                                                Sharpe <i class="fas fa-sort"></i>
+                                            </button>
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1036,13 +1107,63 @@ HTML_TEMPLATE = """
         }
 
         // Загрузка таблицы
-        async function loadTable() {
+        // Глобальная переменная для отслеживания направления сортировки
+        let currentSortOrder = 'desc';
+        let currentSortBy = 'nav';
+
+        // Функция обновления таблицы с параметрами
+        async function updateTable() {
+            const limit = document.getElementById('table-limit').value;
+            const sortBy = document.getElementById('table-sort').value;
+            const sortOrder = document.getElementById('table-order').value;
+            
+            currentSortBy = sortBy;
+            currentSortOrder = sortOrder;
+            
+            await loadTable(limit, sortBy, sortOrder);
+        }
+
+        // Функция сортировки по клику на заголовок
+        function sortTable(sortBy) {
+            // Переключаем направление сортировки если кликнули по той же колонке
+            if (currentSortBy === sortBy) {
+                currentSortOrder = currentSortOrder === 'desc' ? 'asc' : 'desc';
+            } else {
+                currentSortOrder = 'desc'; // По умолчанию убывание для новой колонки
+            }
+            
+            currentSortBy = sortBy;
+            
+            // Обновляем селекторы
+            document.getElementById('table-sort').value = sortBy;
+            document.getElementById('table-order').value = currentSortOrder;
+            
+            const limit = document.getElementById('table-limit').value;
+            loadTable(limit, sortBy, currentSortOrder);
+        }
+
+        async function loadTable(limit = '20', sortBy = 'nav', sortOrder = 'desc') {
             try {
-                const response = await fetch('/api/table');
+                const params = new URLSearchParams({
+                    limit: limit,
+                    sort_by: sortBy,
+                    sort_order: sortOrder
+                });
+                const response = await fetch(`/api/table?${params}`);
                 const data = await response.json();
                 
                 const tbody = document.querySelector('#etf-table tbody');
                 tbody.innerHTML = '';
+                
+                // Добавляем информацию о количестве записей
+                const tableInfo = document.querySelector('.table-info') || document.createElement('div');
+                tableInfo.className = 'table-info mt-2 text-muted small';
+                tableInfo.innerHTML = `Показано: <strong>${data.length}</strong> из 96 фондов`;
+                
+                const tableContainer = document.querySelector('#etf-table').parentNode;
+                if (!document.querySelector('.table-info')) {
+                    tableContainer.appendChild(tableInfo);
+                }
                 
                 data.forEach(etf => {
                     const returnClass = etf.annual_return > 15 ? 'positive' : etf.annual_return < 0 ? 'negative' : '';
@@ -2050,13 +2171,18 @@ def api_table():
         return jsonify([])
     
     try:
+        # Получаем параметры фильтрации
+        limit = request.args.get('limit', '20')  # По умолчанию 20
+        sort_by = request.args.get('sort_by', 'nav')  # По умолчанию по СЧА
+        sort_order = request.args.get('sort_order', 'desc')  # По умолчанию по убыванию
+        
         # Получаем детальную информацию о категориях
         if capital_flow_analyzer:
             detailed_funds = capital_flow_analyzer.get_detailed_fund_info()
         else:
             detailed_funds = etf_data.copy()
         
-        # Топ-20 ETF по рыночной капитализации (СЧА)
+        # Все ETF с возможностью фильтрации
         funds_with_nav = detailed_funds.copy()
         
         # Получаем точные данные СЧА с investfunds.ru
@@ -2094,8 +2220,35 @@ def api_table():
         
         nav_column = 'real_nav'
         
-        # Сортируем по СЧА и берем топ-20
-        top_etfs = funds_with_nav.nlargest(20, nav_column)
+        # Определяем колонку для сортировки
+        sort_column_map = {
+            'nav': nav_column,
+            'return': 'annual_return',
+            'volatility': 'volatility',
+            'sharpe': 'sharpe_ratio',
+            'price': 'real_unit_price',
+            'volume': 'avg_daily_volume',
+            'mgmt_fee': 'management_fee',
+            'total_fee': 'total_expenses',
+            'ticker': 'ticker',
+            'name': 'name'
+        }
+        
+        sort_column = sort_column_map.get(sort_by, nav_column)
+        
+        # Сортируем данные
+        ascending = sort_order == 'asc'
+        sorted_funds = funds_with_nav.sort_values(by=sort_column, ascending=ascending)
+        
+        # Применяем ограничение количества
+        if limit == 'all' or limit == '96':
+            top_etfs = sorted_funds
+        else:
+            try:
+                limit_num = int(limit)
+                top_etfs = sorted_funds.head(limit_num)
+            except ValueError:
+                top_etfs = sorted_funds.head(20)  # Fallback к 20
         
         # Подготавливаем данные для таблицы
         table_data = []
