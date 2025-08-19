@@ -266,6 +266,78 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
+        <!-- Алерты рынка -->
+        <div class="row mb-4" id="alerts-section">
+            <div class="col-12">
+                <div class="card border-warning">
+                    <div class="card-header bg-warning text-dark">
+                        <div class="row align-items-center">
+                            <div class="col-md-6">
+                                <h5 class="mb-0">🚨 Рыночные алерты</h5>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <button class="btn btn-sm btn-outline-dark me-2" onclick="loadAlerts()">
+                                    <i class="fas fa-sync-alt"></i> Обновить
+                                </button>
+                                <button class="btn btn-sm btn-dark" onclick="scanMarket()">
+                                    <i class="fas fa-search"></i> Сканировать рынок
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Сводка алертов -->
+                        <div class="row mb-3" id="alerts-summary">
+                            <div class="col-md-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-clock text-primary me-2"></i>
+                                    <div>
+                                        <small class="text-muted">Последний час</small>
+                                        <div class="fw-bold" id="alerts-1h">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-calendar-day text-info me-2"></i>
+                                    <div>
+                                        <small class="text-muted">Последние 24ч</small>
+                                        <div class="fw-bold" id="alerts-24h">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-calendar-week text-success me-2"></i>
+                                    <div>
+                                        <small class="text-muted">Последние 7 дней</small>
+                                        <div class="fw-bold" id="alerts-7d">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-exclamation-triangle text-warning me-2"></i>
+                                    <div>
+                                        <small class="text-muted">Статус</small>
+                                        <div class="fw-bold" id="scan-status">Готов</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Список алертов -->
+                        <div id="alerts-list">
+                            <div class="text-center py-3">
+                                <div class="spinner-border text-warning" role="status"></div>
+                                <p class="mt-2">Загрузка алертов...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Временные фильтры -->
         <div class="row mb-4" id="temporal-section">
             <div class="col-12">
@@ -1697,6 +1769,7 @@ HTML_TEMPLATE = """
                 if (typeof loadTable === 'function') loadTable();
                 if (typeof loadRecommendations === 'function') loadRecommendations();
                 if (typeof loadDetailedStats === 'function') loadDetailedStats();
+                if (typeof loadAlerts === 'function') loadAlerts();
                 
             }, 1000); // Задержка 1 секунда для загрузки всех скриптов
 
@@ -2023,6 +2096,188 @@ HTML_TEMPLATE = """
 
         // Загружаем периоды при инициализации
         loadTemporalPeriods();
+
+        // ===== ФУНКЦИИ ДЛЯ РАБОТЫ С АЛЕРТАМИ =====
+
+        // Загрузка сводки алертов
+        async function loadAlertsSummary() {
+            try {
+                const response = await fetch('/api/alerts/summary');
+                const data = await response.json();
+                
+                // Обновляем счетчики
+                document.getElementById('alerts-1h').textContent = data.last_hour.total;
+                document.getElementById('alerts-24h').textContent = data.last_24h.total;
+                document.getElementById('alerts-7d').textContent = data.last_7d.total;
+                
+                return data;
+            } catch (error) {
+                console.error('Ошибка загрузки сводки алертов:', error);
+            }
+        }
+
+        // Загрузка списка алертов
+        async function loadAlerts(hours = 24) {
+            try {
+                const response = await fetch(`/api/alerts?hours=${hours}`);
+                const data = await response.json();
+                
+                const alertsList = document.getElementById('alerts-list');
+                
+                if (data.alerts && data.alerts.length > 0) {
+                    let alertsHtml = '';
+                    
+                    data.alerts.forEach(alert => {
+                        const priorityClass = {
+                            'HIGH': 'border-danger bg-danger bg-opacity-10',
+                            'MEDIUM': 'border-warning bg-warning bg-opacity-10', 
+                            'LOW': 'border-info bg-info bg-opacity-10'
+                        }[alert.priority] || 'border-secondary';
+                        
+                        const typeIcon = {
+                            'NEW_FUND': '🆕',
+                            'CAPITAL_FLOW': '💰',
+                            'VOLUME_ANOMALY': '📈',
+                            'VOLATILITY_ANOMALY': '⚠️',
+                            'RETURN_ANOMALY': '🎯'
+                        }[alert.type] || '📊';
+                        
+                        const timeAgo = getTimeAgo(alert.timestamp);
+                        
+                        alertsHtml += `
+                            <div class="card mb-2 ${priorityClass}">
+                                <div class="card-body py-2">
+                                    <div class="row align-items-center">
+                                        <div class="col-md-1 text-center">
+                                            <span style="font-size: 1.5em;">${typeIcon}</span>
+                                        </div>
+                                        <div class="col-md-7">
+                                            <div class="fw-medium">${alert.message}</div>
+                                            <small class="text-muted">Фонд: ${alert.ticker} - ${alert.name || 'Неизвестно'}</small>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <span class="badge bg-${alert.priority === 'HIGH' ? 'danger' : alert.priority === 'MEDIUM' ? 'warning' : 'info'}">${alert.priority}</span>
+                                        </div>
+                                        <div class="col-md-2 text-end">
+                                            <small class="text-muted">${timeAgo}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    alertsList.innerHTML = alertsHtml;
+                } else {
+                    alertsList.innerHTML = `
+                        <div class="text-center py-4">
+                            <i class="fas fa-check-circle text-success" style="font-size: 3em;"></i>
+                            <h6 class="mt-2">Нет активных алертов</h6>
+                            <p class="text-muted">За последние ${hours} часов новых событий не обнаружено</p>
+                        </div>
+                    `;
+                }
+                
+                // Обновляем сводку
+                await loadAlertsSummary();
+                
+            } catch (error) {
+                console.error('Ошибка загрузки алертов:', error);
+                document.getElementById('alerts-list').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Ошибка загрузки алертов: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // Запуск сканирования рынка
+        async function scanMarket() {
+            const scanButton = document.querySelector('button[onclick="scanMarket()"]');
+            const originalText = scanButton.innerHTML;
+            const statusElement = document.getElementById('scan-status');
+            
+            try {
+                // Показываем индикатор загрузки
+                scanButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Сканирование...';
+                scanButton.disabled = true;
+                statusElement.textContent = 'Сканирование...';
+                statusElement.className = 'fw-bold text-primary';
+                
+                const response = await fetch('/api/scan-market');
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Показываем результаты
+                statusElement.innerHTML = `
+                    <span class="text-success">Завершено</span><br>
+                    <small>${data.total_alerts} алертов</small>
+                `;
+                
+                // Перезагружаем алерты
+                await loadAlerts();
+                
+                // Показываем уведомление
+                if (data.total_alerts > 0) {
+                    showNotification(`Обнаружено ${data.total_alerts} новых событий!`, 'success');
+                } else {
+                    showNotification('Новых событий не найдено', 'info');
+                }
+                
+            } catch (error) {
+                console.error('Ошибка сканирования:', error);
+                statusElement.innerHTML = '<span class="text-danger">Ошибка</span>';
+                showNotification(`Ошибка сканирования: ${error.message}`, 'danger');
+            } finally {
+                // Восстанавливаем кнопку
+                scanButton.innerHTML = originalText;
+                scanButton.disabled = false;
+            }
+        }
+
+        // Вспомогательная функция для отображения времени
+        function getTimeAgo(timestamp) {
+            const now = new Date();
+            const alertTime = new Date(timestamp);
+            const diffMs = now - alertTime;
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const diffMinutes = Math.floor(diffMs / (1000 * 60));
+            
+            if (diffHours >= 24) {
+                const diffDays = Math.floor(diffHours / 24);
+                return `${diffDays} ${diffDays === 1 ? 'день' : diffDays < 5 ? 'дня' : 'дней'} назад`;
+            } else if (diffHours >= 1) {
+                return `${diffHours} ${diffHours === 1 ? 'час' : diffHours < 5 ? 'часа' : 'часов'} назад`;
+            } else if (diffMinutes >= 1) {
+                return `${diffMinutes} ${diffMinutes === 1 ? 'минуту' : diffMinutes < 5 ? 'минуты' : 'минут'} назад`;
+            } else {
+                return 'только что';
+            }
+        }
+
+        // Показать уведомление
+        function showNotification(message, type = 'info') {
+            // Создаем элемент уведомления
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            notification.style.cssText = 'top: 20px; right: 20px; z-index: 1050; min-width: 300px;';
+            notification.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Автоматически убираем через 5 секунд
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
         
         // Загружаем информацию о данных
         loadDataInfo();
@@ -3368,6 +3623,97 @@ def live_info():
             'error': f'Ошибка получения информации: {str(e)}',
             'last_updated': datetime.now().strftime('%d.%m.%Y, %H:%M:%S')
         }), 500
+
+@app.route('/api/alerts')
+def api_alerts():
+    """API получения активных алертов"""
+    try:
+        from market_alerts import MarketAlerts
+        
+        hours = request.args.get('hours', '24')
+        try:
+            hours = int(hours)
+        except ValueError:
+            hours = 24
+        
+        alerts_system = MarketAlerts()
+        active_alerts = alerts_system.get_active_alerts(hours=hours)
+        
+        return jsonify({
+            'total_alerts': len(active_alerts),
+            'timeframe_hours': hours,
+            'alerts': active_alerts
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/api/scan-market')
+def api_scan_market():
+    """API запуска сканирования рынка для поиска алертов"""
+    if etf_data is None:
+        return jsonify({'error': 'Данные не загружены'})
+    
+    try:
+        from market_alerts import MarketAlerts
+        
+        alerts_system = MarketAlerts()
+        scan_results = alerts_system.run_full_scan(etf_data.copy())
+        
+        return jsonify(scan_results)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/api/alerts/summary')
+def api_alerts_summary():
+    """API сводки по алертам"""
+    try:
+        from market_alerts import MarketAlerts
+        
+        alerts_system = MarketAlerts()
+        
+        # Получаем алерты за разные периоды
+        alerts_1h = alerts_system.get_active_alerts(hours=1)
+        alerts_24h = alerts_system.get_active_alerts(hours=24)
+        alerts_7d = alerts_system.get_active_alerts(hours=168)  # 7 дней
+        
+        # Группируем по типам
+        def group_by_type(alerts):
+            groups = {}
+            for alert in alerts:
+                alert_type = alert.get('type', 'UNKNOWN')
+                if alert_type not in groups:
+                    groups[alert_type] = 0
+                groups[alert_type] += 1
+            return groups
+        
+        summary = {
+            'last_hour': {
+                'total': len(alerts_1h),
+                'by_type': group_by_type(alerts_1h)
+            },
+            'last_24h': {
+                'total': len(alerts_24h),
+                'by_type': group_by_type(alerts_24h)
+            },
+            'last_7d': {
+                'total': len(alerts_7d),
+                'by_type': group_by_type(alerts_7d)
+            },
+            'alert_types': {
+                'NEW_FUND': 'Новые фонды',
+                'CAPITAL_FLOW': 'Движения капитала',
+                'VOLUME_ANOMALY': 'Аномалии объемов',
+                'VOLATILITY_ANOMALY': 'Экстремальная волатильность',
+                'RETURN_ANOMALY': 'Экстремальная доходность'
+            }
+        }
+        
+        return jsonify(summary)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 if __name__ == '__main__':
     print("🚀 Запуск простого ETF дашборда...")
