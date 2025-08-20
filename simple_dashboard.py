@@ -4,7 +4,7 @@
 Все функции работают гарантированно
 """
 
-from flask import Flask, render_template_string, jsonify, request
+from flask import Flask, render_template_string, jsonify, request, make_response
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -2502,7 +2502,16 @@ HTML_TEMPLATE = """
 @app.route('/')
 def index():
     """Главная страница"""
-    return render_template_string(HTML_TEMPLATE)
+    try:
+        # Добавляем отладочные заголовки
+        response = make_response(render_template_string(HTML_TEMPLATE))
+        response.headers['Content-Type'] = 'text/html; charset=utf-8'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+    except Exception as e:
+        return f"<h1>Ошибка загрузки дашборда</h1><p>{str(e)}</p><p>Проверьте консоль на предмет ошибок.</p>"
 
 @app.route('/api/stats')
 def api_stats():
@@ -3856,6 +3865,8 @@ if __name__ == '__main__':
     
     print("✅ Данные загружены успешно")
     print("🌐 Дашборд доступен по адресу: http://localhost:5004")
+    print("🌐 Альтернативный адрес: http://127.0.0.1:5004")
     print("⏹️  Для остановки нажмите Ctrl+C")
+    print("⚠️  ВАЖНО: Убедитесь что заходите именно на порт 5004, а не 5000!")
     
     app.run(debug=True, host='0.0.0.0', port=5004)
