@@ -48,6 +48,38 @@ capital_flow_analyzer = None
 temporal_engine = None
 historical_manager = None
 
+def get_fund_return_by_type(ticker, name):
+    """Определяет ожидаемую доходность на основе типа фонда"""
+    name_lower = name.lower()
+    
+    if 'денежный' in name_lower or 'money' in name_lower or 'ликвидность' in name_lower:
+        return 16.5  # Денежные фонды - доходность около ключевой ставки
+    elif 'облигаци' in name_lower or 'bond' in name_lower or 'rgbi' in ticker.lower():
+        return 14.5  # Облигационные фонды
+    elif 'золото' in name_lower or 'gold' in name_lower:
+        return 8.0   # Золотые фонды
+    elif 'индекс' in name_lower or 'imoex' in name_lower or 'rtsi' in name_lower:
+        return 5.5   # Индексные фонды акций (волатильные)
+    elif 'акци' in name_lower or 'equity' in name_lower or 'технолог' in name_lower:
+        return 2.0   # Акционные фонды
+    else:
+        return 10.0  # Смешанные фонды
+
+def get_fund_volatility_by_type(ticker, name):
+    """Определяет ожидаемую волатильность на основе типа фонда"""
+    name_lower = name.lower()
+    
+    if 'денежный' in name_lower or 'money' in name_lower or 'ликвидность' in name_lower:
+        return 1.5   # Низкая волатильность
+    elif 'облигаци' in name_lower or 'bond' in name_lower:
+        return 6.0   # Умеренная волатильность
+    elif 'золото' in name_lower or 'gold' in name_lower:
+        return 18.0  # Высокая волатильность
+    elif 'индекс' in name_lower or 'акци' in name_lower or 'технолог' in name_lower:
+        return 25.0  # Очень высокая волатильность
+    else:
+        return 12.0  # Средняя волатильность
+
 def create_initial_data():
     """Создает реальные данные с investfunds.ru для инициализации дашборда"""
     try:
@@ -89,9 +121,10 @@ def create_initial_data():
                 etf_data_list.append({
                     'ticker': ticker,
                     'name': real_data.get('name', f'БПИФ {ticker}'),
-                    'annual_return': 12.0,  # Базовая доходность для российских БПИФ
-                    'volatility': 20.0,     # Базовая волатильность  
-                    'sharpe_ratio': (12.0 - 15.0) / 20.0,  # Рассчитанный Sharpe
+                    # Определяем доходность на основе типа фонда
+                    'annual_return': get_fund_return_by_type(ticker, real_data.get('name', '')),
+                    'volatility': get_fund_volatility_by_type(ticker, real_data.get('name', '')),     
+                    'sharpe_ratio': 0.0,  # Будет рассчитан позже
                     'current_price': real_data.get('unit_price', 100.0),
                     'avg_daily_value_rub': real_data.get('nav', 1000000),
                     'category': 'Смешанные (Регулярный доход)',
@@ -141,6 +174,11 @@ def create_initial_data():
         
         # Создаем CSV файл
         df = pd.DataFrame(etf_data_list)
+        
+        # Рассчитываем Sharpe ratio для всех фондов
+        risk_free_rate = 16.0  # Ключевая ставка ЦБ РФ
+        df['sharpe_ratio'] = (df['annual_return'] - risk_free_rate) / df['volatility']
+        
         filename = f'enhanced_etf_data_{timestamp}.csv'
         df.to_csv(filename, index=False, encoding='utf-8')
         
@@ -2646,7 +2684,7 @@ def api_table():
             
             fund_data = {
                 'ticker': fund.get('ticker', ''),
-                'name': fund.get('full_name', fund.get('short_name', fund.get('name', ''))),
+                'name': fund.get('name', f'БПИФ {fund.get("ticker", "")}'),
                 'category': full_category,
                 'annual_return': round(fund.get('annual_return', 0), 1),
                 'volatility': round(fund.get('volatility', 0), 1),
