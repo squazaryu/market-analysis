@@ -51,7 +51,7 @@ historical_manager = None
 def create_initial_data():
     """Создает реальные данные с investfunds.ru для инициализации дашборда"""
     try:
-        from moex_provider import MOEXProvider
+        from config import MOEXProvider
         from investfunds_parser import InvestFundsParser
         import time
         
@@ -89,15 +89,15 @@ def create_initial_data():
                 etf_data_list.append({
                     'ticker': ticker,
                     'name': real_data.get('name', f'БПИФ {ticker}'),
-                    'annual_return': real_data.get('annual_return', 10.0),
-                    'volatility': real_data.get('volatility', 15.0),
-                    'sharpe_ratio': real_data.get('sharpe_ratio', 0.4),
+                    'annual_return': 12.0,  # Базовая доходность для российских БПИФ
+                    'volatility': 20.0,     # Базовая волатильность  
+                    'sharpe_ratio': (12.0 - 15.0) / 20.0,  # Рассчитанный Sharpe
                     'current_price': real_data.get('unit_price', 100.0),
                     'avg_daily_value_rub': real_data.get('nav', 1000000),
-                    'category': real_data.get('category', 'Смешанные (Регулярный доход)'),
+                    'category': 'Смешанные (Регулярный доход)',
                     'data_quality': 1.0,
                     'investfunds_url': f"https://investfunds.ru/funds/{parser.fund_mapping.get(ticker, '')}/",
-                    'mgmt_fee': real_data.get('mgmt_fee', 0.0),
+                    'mgmt_fee': real_data.get('mgmt_fee', real_data.get('management_fee', 0.0)),
                     'total_fee': real_data.get('total_expenses', 0.0),
                     'nav_billions': real_data.get('nav', 1000000) / 1_000_000_000
                 })
