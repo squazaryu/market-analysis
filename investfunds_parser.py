@@ -652,7 +652,16 @@ class InvestFundsParser:
         
         fund_id = self.fund_mapping.get(ticker.upper())
         if fund_id:
-            return self.get_fund_data(fund_id)
+            fund_data = self.get_fund_data(fund_id)
+            if fund_data:
+                # Добавляем альтернативные ключи для совместимости с таблицей
+                fund_data['mgmt_fee'] = fund_data.get('management_fee', 0)
+                fund_data['nav_billions'] = fund_data.get('nav', 0) / 1_000_000_000
+                
+                # Добавляем ссылку на investfunds.ru
+                fund_data['investfunds_url'] = f"https://investfunds.ru/funds/{fund_id}/"
+                
+            return fund_data
         else:
             self.logger.warning(f"Фонд с тикером {ticker} не найден в маппинге")
             return None
