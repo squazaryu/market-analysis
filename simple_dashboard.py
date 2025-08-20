@@ -1769,7 +1769,55 @@ HTML_TEMPLATE = """
                 if (typeof loadTable === 'function') loadTable();
                 if (typeof loadRecommendations === 'function') loadRecommendations();
                 if (typeof loadDetailedStats === 'function') loadDetailedStats();
+                if (typeof loadAlertsSummary === 'function') loadAlertsSummary();
                 if (typeof loadAlerts === 'function') loadAlerts();
+                
+                // Автоматическое обновление алертов каждые 30 секунд
+                setInterval(() => {
+                    if (typeof loadAlertsSummary === 'function') {
+                        loadAlertsSummary();
+                    }
+                    if (typeof loadAlerts === 'function') {
+                        loadAlerts();
+                    }
+                }, 30000);
+                
+                // Автоматическое сканирование каждые 10 минут
+                setInterval(async () => {
+                    try {
+                        const statusElement = document.getElementById('scan-status');
+                        if (statusElement) {
+                            statusElement.textContent = 'Автосканирование...';
+                            statusElement.className = 'fw-bold text-warning';
+                        }
+                        
+                        const response = await fetch('/api/scan-market', { method: 'POST' });
+                        const data = await response.json();
+                        
+                        if (statusElement) {
+                            if (data.success) {
+                                statusElement.textContent = `Готов (${data.new_alerts_count || 0} новых)`;
+                                statusElement.className = 'fw-bold text-success';
+                            } else {
+                                statusElement.textContent = 'Ошибка';
+                                statusElement.className = 'fw-bold text-danger';
+                            }
+                        }
+                        
+                        if (data.success && data.new_alerts_count > 0) {
+                            console.log('Автосканирование: новых алертов', data.new_alerts_count);
+                            await loadAlertsSummary();
+                            await loadAlerts();
+                        }
+                    } catch (error) {
+                        console.error('Ошибка автосканирования:', error);
+                        const statusElement = document.getElementById('scan-status');
+                        if (statusElement) {
+                            statusElement.textContent = 'Ошибка';
+                            statusElement.className = 'fw-bold text-danger';
+                        }
+                    }
+                }, 10 * 60 * 1000); // Каждые 10 минут
                 
             }, 1000); // Задержка 1 секунда для загрузки всех скриптов
 

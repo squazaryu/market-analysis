@@ -260,15 +260,35 @@ class MarketAlerts:
         return alerts
     
     def save_alerts(self, alerts: List[Dict]):
-        """Сохраняет алерты в файл"""
+        """Сохраняет алерты в файл с защитой от дублирования"""
         try:
             with open(self.alerts_file, 'r', encoding='utf-8') as f:
                 existing_alerts = json.load(f)
             
-            # Добавляем новые алерты
+            # Добавляем новые алерты с улучшенной дедупликацией
             for alert in alerts:
-                alert_id = f"{alert['type']}_{alert['ticker']}_{alert['timestamp']}"
-                existing_alerts[alert_id] = alert
+                # Создаем уникальный ключ для каждого типа алерта
+                if alert['type'] == 'NEW_FUND':
+                    # Для новых фондов - только один алерт на тикер
+                    alert_id = f"NEW_FUND_{alert['ticker']}"
+                elif alert['type'] == 'CAPITAL_FLOW':
+                    # Для движений капитала - группируем по дате (без времени)
+                    date_only = alert['timestamp'][:10]  # YYYY-MM-DD
+                    alert_id = f"CAPITAL_FLOW_{alert['ticker']}_{date_only}"
+                elif alert['type'] in ['VOLUME_ANOMALY', 'VOLATILITY_ANOMALY', 'RETURN_ANOMALY']:
+                    # Для аномалий - один алерт в день на тикер
+                    date_only = alert['timestamp'][:10]
+                    alert_id = f"{alert['type']}_{alert['ticker']}_{date_only}"
+                else:
+                    # Для остальных типов - стандартная логика
+                    alert_id = f"{alert['type']}_{alert['ticker']}_{alert['timestamp']}"
+                
+                # Сохраняем алерт только если его еще нет
+                if alert_id not in existing_alerts:
+                    existing_alerts[alert_id] = alert
+                    logger.info(f"Новый алерт сохранен: {alert_id}")
+                else:
+                    logger.debug(f"Алерт уже существует, пропускаем: {alert_id}")
             
             # Очищаем старые алерты (старше 7 дней)
             cutoff_date = datetime.now() - timedelta(days=7)
