@@ -2544,6 +2544,7 @@ def api_table():
             investfunds_parser = InvestFundsParser()
             
             # Обогащаем данные точными значениями СЧА
+            updated_count = 0
             for idx, row in funds_with_nav.iterrows():
                 ticker = row['ticker']
                 real_data = investfunds_parser.find_fund_by_ticker(ticker)
@@ -2558,10 +2559,14 @@ def api_table():
                     funds_with_nav.at[idx, 'total_expenses'] = real_data.get('total_expenses', 0)
                     funds_with_nav.at[idx, 'depositary_name'] = real_data.get('depositary_name', '')
                     funds_with_nav.at[idx, 'data_source'] = 'investfunds.ru'
+                    # Обновляем название фонда
+                    funds_with_nav.at[idx, 'name'] = real_data.get('name', row.get('name', ''))
+                    updated_count += 1
                 else:
                     # Fallback на расчетные данные
-                    funds_with_nav.at[idx, 'real_nav'] = funds_with_nav.at[idx, 'avg_daily_value_rub'] * 50
-                    funds_with_nav.at[idx, 'real_unit_price'] = funds_with_nav.at[idx, 'current_price']
+                    fallback_nav = row.get('avg_daily_value_rub', 1000000) * 50
+                    funds_with_nav.at[idx, 'real_nav'] = fallback_nav
+                    funds_with_nav.at[idx, 'real_unit_price'] = row.get('current_price', 100)
                     funds_with_nav.at[idx, 'data_source'] = 'расчетное'
         
         except Exception as e:
@@ -2619,9 +2624,10 @@ def api_table():
             else:
                 full_category = 'Неизвестно'
             
-            # СЧА в миллиардах рублей
-            nav_value = fund.get(nav_column, 0)
+            # СЧА в миллиардах рублей (приоритет: реальные данные)
+            nav_value = fund.get('real_nav', fund.get(nav_column, fund.get('avg_daily_value_rub', 0)))
             nav_billions = nav_value / 1_000_000_000 if nav_value > 0 else 0
+            
             
             # Стоимость пая (приоритет: реальные данные, затем MOEX)
             unit_price = fund.get('real_unit_price', fund.get('last_price', fund.get('current_price', 0)))
