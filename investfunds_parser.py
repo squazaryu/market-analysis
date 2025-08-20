@@ -245,7 +245,10 @@ class InvestFundsParser:
             'total_expenses': 0,        # Общие расходы (%)
             'depositary_name': '',      # Название специализированного депозитария
             'registrar_name': '',       # Название специализированного регистратора
-            'auditor_name': ''          # Название аудитора
+            'auditor_name': '',         # Название аудитора
+            'annual_return': 0.0,       # Годовая доходность (%)
+            'monthly_return': 0.0,      # Месячная доходность (%)
+            'quarterly_return': 0.0     # Квартальная доходность (%)
         }
         
         try:
@@ -373,6 +376,44 @@ class InvestFundsParser:
             # Парсим информацию о комиссиях и инфраструктуре
             self._parse_fund_fees(soup, fund_data)
             self._parse_fund_infrastructure(soup, fund_data)
+            
+            # Извлекаем доходность из таблицы
+            try:
+                # Ищем таблицу с доходностью
+                return_table = soup.find('table', class_='table')
+                if return_table:
+                    # Ищем строку с процентами доходности  
+                    for row in return_table.find_all('tr'):
+                        cells = row.find_all('td')
+                        if len(cells) >= 5:  # Должно быть минимум 5 колонок
+                            # Ищем ячейки с процентами
+                            percent_cells = []
+                            for cell in cells:
+                                text = cell.get_text(strip=True)
+                                if '%' in text:
+                                    try:
+                                        # Очищаем и преобразуем в число
+                                        clean_text = text.replace('%', '').replace(',', '.').replace(' ', '').strip()
+                                        # Проверяем что это число (может быть отрицательным)
+                                        if clean_text.replace('-', '').replace('.', '').isdigit():
+                                            value = float(clean_text)
+                                            percent_cells.append(value)
+                                    except:
+                                        continue
+                            
+                            # Если нашли строку с процентами доходности
+                            if len(percent_cells) >= 3:
+                                # Обычно структура: месяц, квартал, полгода, год, 3года, 5лет
+                                if len(percent_cells) >= 4:
+                                    fund_data['monthly_return'] = percent_cells[0] if len(percent_cells) > 0 else 0.0
+                                    fund_data['quarterly_return'] = percent_cells[1] if len(percent_cells) > 1 else 0.0  
+                                    fund_data['annual_return'] = percent_cells[3] if len(percent_cells) > 3 else 0.0  # 4-я колонка = год
+                                    
+                                    self.logger.info(f"Извлечена доходность для фонда {fund_id}: месяц={fund_data['monthly_return']}%, год={fund_data['annual_return']}%")
+                                    break
+                                    
+            except Exception as e:
+                self.logger.warning(f"Не удалось извлечь доходность для фонда {fund_id}: {e}")
             
             # Применяем исправления для известных проблемных фондов
             fund_data = self._apply_fund_fixes(fund_data, fund_id)
@@ -646,6 +687,137 @@ class InvestFundsParser:
             )
         
         return fund_data
+    
+    def archive_cache(self) -> bool:
+        """Архивирует кэш данных фондов вместо удаления"""
+        try:
+            import shutil
+            from datetime import datetime
+            
+            if not self.cache_dir.exists() or not list(self.cache_dir.glob('*.json')):
+                self.logger.info("📦 Кэш пуст, нечего архивировать")
+                return True
+            
+            # Создаем папку для архивов
+            archive_root = Path("investfunds_archive")
+            archive_root.mkdir(exist_ok=True)
+            
+            # Создаем папку с текущей датой и временем
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            archive_dir = archive_root / f"cache_{timestamp}"
+            
+            # Копируем кэш в архив
+            shutil.copytree(self.cache_dir, archive_dir)
+            
+            # Подсчитываем файлы в архиве
+            archived_files = len(list(archive_dir.glob('*.json')))
+            
+            # Очищаем текущий кэш
+            shutil.rmtree(self.cache_dir)
+            self.cache_dir.mkdir(exist_ok=True)
+            
+            self.logger.info(f"📦 Кэш заархивирован в {archive_dir} ({archived_files} файлов)")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка архивирования кэша: {e}")
+            return False
+    
+    def clear_cache(self) -> bool:
+        """Очищает весь кэш данных фондов (оставлено для совместимости)"""
+        return self.archive_cache()
+    
+    def get_historical_data(self, fund_id: int, date: str = None) -> List[Dict]:
+        """
+        Загружает исторические данные фонда из архива
+        
+        Args:
+            fund_id: ID фонда
+            date: Дата в формате YYYYMMDD (если не указана, ищет во всех архивах)
+        
+        Returns:
+            Список исторических записей данных фонда
+        """
+        try:
+            archive_root = Path("investfunds_archive")
+            if not archive_root.exists():
+                self.logger.warning("📦 Папка архивов не найдена")
+                return []
+            
+            historical_data = []
+            
+            # Ищем во всех архивных папках
+            for archive_dir in sorted(archive_root.iterdir()):
+                if not archive_dir.is_dir():
+                    continue
+                
+                # Если указана дата, фильтруем по ней
+                if date and not archive_dir.name.startswith(f"cache_{date}"):
+                    continue
+                
+                # Ищем файлы данного фонда в архиве
+                pattern = f"fund_{fund_id}_*.json"
+                fund_files = list(archive_dir.glob(pattern))
+                
+                for fund_file in fund_files:
+                    try:
+                        with open(fund_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                            # Добавляем метаданные архива
+                            data['archive_timestamp'] = archive_dir.name.replace('cache_', '')
+                            data['archive_file'] = str(fund_file)
+                            historical_data.append(data)
+                    except Exception as e:
+                        self.logger.error(f"❌ Ошибка чтения архивного файла {fund_file}: {e}")
+            
+            self.logger.info(f"📊 Найдено {len(historical_data)} исторических записей для фонда {fund_id}")
+            return historical_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка загрузки исторических данных: {e}")
+            return []
+    
+    def get_fund_history_summary(self) -> Dict[str, int]:
+        """
+        Возвращает сводку по доступным историческим данным
+        
+        Returns:
+            Словарь с информацией о количестве архивов и фондов
+        """
+        try:
+            archive_root = Path("investfunds_archive")
+            if not archive_root.exists():
+                return {'archives': 0, 'funds': 0, 'total_files': 0}
+            
+            archives = []
+            total_files = 0
+            unique_funds = set()
+            
+            for archive_dir in archive_root.iterdir():
+                if archive_dir.is_dir():
+                    archives.append(archive_dir.name)
+                    files = list(archive_dir.glob('fund_*.json'))
+                    total_files += len(files)
+                    
+                    # Извлекаем ID фондов из имен файлов
+                    for file in files:
+                        # fund_5973_20250820.json -> 5973
+                        try:
+                            fund_id = file.name.split('_')[1]
+                            unique_funds.add(fund_id)
+                        except:
+                            pass
+            
+            return {
+                'archives': len(archives),
+                'funds': len(unique_funds),
+                'total_files': total_files,
+                'archive_list': sorted(archives)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка получения сводки архивов: {e}")
+            return {'archives': 0, 'funds': 0, 'total_files': 0}
     
     def find_fund_by_ticker(self, ticker: str) -> Optional[Dict]:
         """Ищет фонд по тикеру в маппинге"""

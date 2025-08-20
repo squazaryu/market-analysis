@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дашборд анализа российских БПИФ</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <div class="container-fluid">
+        <header class="bg-primary text-white p-4 mb-4">
+            <h1><i class="fas fa-chart-line me-2"></i>Анализ российских БПИФ</h1>
+            <p class="mb-0">Комплексная аналитика биржевых паевых инвестиционных фондов</p>
+        </header>
+
+        <!-- Статистика -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <h3 id="total-funds">96</h3>
+                        <p>Всего фондов</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body text-center">
+                        <h3 id="total-nav">1,445</h3>
+                        <p>Млрд ₽ СЧА</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body text-center">
+                        <h3 id="avg-return">10.2%</h3>
+                        <p>Средняя доходность</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-danger text-white">
+                    <div class="card-body text-center">
+                        <h3 id="last-update">Сегодня</h3>
+                        <p>Последнее обновление</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Управление -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>🎛️ Управление дашбордом</h5>
+                    </div>
+                    <div class="card-body">
+                        <button class="btn btn-primary me-2" onclick="loadData()">
+                            <i class="fas fa-sync me-1"></i>Загрузить данные
+                        </button>
+                        <button class="btn btn-success me-2" onclick="updateAll()">
+                            <i class="fas fa-refresh me-1"></i>Обновить все
+                        </button>
+                        <button class="btn btn-info me-2" onclick="showArchive()">
+                            <i class="fas fa-archive me-1"></i>Архив
+                        </button>
+                        <button class="btn btn-warning" onclick="startScheduler()">
+                            <i class="fas fa-clock me-1"></i>Планировщик
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Таблица фондов -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>📊 Топ БПИФ фонды</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="funds-table">
+                                <thead>
+                                    <tr>
+                                        <th>Тикер</th>
+                                        <th>Название</th>
+                                        <th>СЧА (млрд ₽)</th>
+                                        <th>Доходность</th>
+                                        <th>Комиссия УК</th>
+                                        <th>Ссылка</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="funds-tbody">
+                                    <tr>
+                                        <td colspan="6" class="text-center">
+                                            <i class="fas fa-spinner fa-spin me-2"></i>Загрузка данных...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- График -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>📈 График риск-доходность</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="risk-return-chart" style="height: 400px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Статус -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div id="status-area" class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>Готов к работе. Нажмите "Загрузить данные" для начала.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_BASE = 'http://localhost:5005'; // API сервер
+        
+        function showStatus(message, type = 'info') {
+            const statusArea = document.getElementById('status-area');
+            statusArea.className = `alert alert-${type}`;
+            statusArea.innerHTML = `<i class="fas fa-${type === 'success' ? 'check' : type === 'danger' ? 'times' : 'info'}-circle me-2"></i>${message}`;
+        }
+
+        async function loadData() {
+            showStatus('Загрузка данных...', 'info');
+            
+            try {
+                // Загружаем статистику
+                const statsResponse = await fetch(`${API_BASE}/api/stats`);
+                const stats = await statsResponse.json();
+                
+                document.getElementById('total-funds').textContent = stats.total_etfs || '96';
+                document.getElementById('total-nav').textContent = `${(stats.total_nav || 1445).toFixed(0)}`;
+                document.getElementById('avg-return').textContent = `${(stats.avg_return || 10.2).toFixed(1)}%`;
+                
+                // Загружаем таблицу
+                const tableResponse = await fetch(`${API_BASE}/api/table?limit=20`);
+                const tableData = await tableResponse.json();
+                
+                const tbody = document.getElementById('funds-tbody');
+                tbody.innerHTML = '';
+                
+                tableData.data.forEach(fund => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><strong>${fund.ticker}</strong></td>
+                        <td>${fund.name}</td>
+                        <td>${fund.nav_billions.toFixed(1)}</td>
+                        <td><span class="badge bg-${fund.annual_return > 10 ? 'success' : 'warning'}">${fund.annual_return.toFixed(1)}%</span></td>
+                        <td>${fund.mgmt_fee.toFixed(2)}%</td>
+                        <td><a href="${fund.investfunds_url}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-external-link-alt"></i></a></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                
+                // Загружаем график
+                const chartResponse = await fetch(`${API_BASE}/api/chart`);
+                const chartData = await chartResponse.json();
+                
+                Plotly.newPlot('risk-return-chart', chartData.data, chartData.layout, {responsive: true});
+                
+                showStatus('Данные успешно загружены!', 'success');
+                
+            } catch (error) {
+                console.error('Ошибка загрузки данных:', error);
+                showStatus(`Ошибка загрузки данных: ${error.message}`, 'danger');
+            }
+        }
+
+        async function updateAll() {
+            showStatus('Запуск полного обновления...', 'warning');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/force-refresh`);
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    showStatus('Данные обновлены! Перезагружаем...', 'success');
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                } else {
+                    showStatus(`Ошибка обновления: ${result.message}`, 'danger');
+                }
+            } catch (error) {
+                showStatus(`Ошибка сети: ${error.message}`, 'danger');
+            }
+        }
+
+        async function showArchive() {
+            try {
+                const response = await fetch(`${API_BASE}/api/archive-summary`);
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    const summary = result.archive_summary;
+                    showStatus(`📦 Архив: ${summary.archives} папок, ${summary.funds} фондов, ${summary.total_files} файлов`, 'info');
+                } else {
+                    showStatus('Ошибка получения архива', 'danger');
+                }
+            } catch (error) {
+                showStatus(`Ошибка архива: ${error.message}`, 'danger');
+            }
+        }
+
+        async function startScheduler() {
+            try {
+                const response = await fetch(`${API_BASE}/api/scheduler/start`);
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    showStatus('Планировщик запущен! Автообновление: ежедневно в 10:00', 'success');
+                } else {
+                    showStatus(`Планировщик: ${result.message}`, 'info');
+                }
+            } catch (error) {
+                showStatus(`Ошибка планировщика: ${error.message}`, 'danger');
+            }
+        }
+
+        // Автозагрузка при открытии страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(loadData, 1000);
+        });
+    </script>
+</body>
+</html>
