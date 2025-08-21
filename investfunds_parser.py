@@ -248,40 +248,100 @@ class InvestFundsParser:
             'auditor_name': '',         # Название аудитора
             'annual_return': 0.0,       # Годовая доходность (%)
             'monthly_return': 0.0,      # Месячная доходность (%)
-            'quarterly_return': 0.0     # Квартальная доходность (%)
+            'quarterly_return': 0.0,    # Квартальная доходность (%)
+            'return_1m': 0.0,          # Доходность за 1 месяц (%)
+            'return_3m': 0.0,          # Доходность за 3 месяца (%)
+            'return_6m': 0.0,          # Доходность за 6 месяцев (%)
+            'return_12m': 0.0,         # Доходность за 12 месяцев (%)
+            'return_36m': 0.0,         # Доходность за 36 месяцев (%)
+            'return_60m': 0.0,         # Доходность за 60 месяцев (%)
+            'bid_price': 0.0,          # Котировка на покупку
+            'ask_price': 0.0,          # Котировка на продажу
+            'volume_rub': 0.0          # Объем торгов в рублях
         }
         
         try:
             # Название фонда
             title_elem = soup.find('h1')
             if title_elem:
-                fund_data['name'] = title_elem.get_text(strip=True)
+                raw_name = title_elem.get_text(strip=True)
+                # Очищаем название от лишней информации
+                # Убираем "(Компания), номер, тикер" в конце
+                clean_name = re.sub(r'\s*\([^)]+\),?\s*\d+,?\s*[A-Z]+\s*$', '', raw_name)
+                # Убираем просто "номер, тикер" в конце  
+                clean_name = re.sub(r',?\s*\d+,?\s*[A-Z]+\s*$', '', clean_name)
+                fund_data['name'] = clean_name.strip()
             
-            # Ищем СЧА и стоимость пая в различных местах
-            
-            # Вариант 1: В таблице динамики
-            table = soup.find('table', class_='table')
-            if table:
+            # Ищем СЧА и стоимость пая в таблицах
+            tables = soup.find_all('table')
+            for table in tables:
                 rows = table.find_all('tr')
                 for row in rows:
                     cells = row.find_all(['td', 'th'])
-                    if len(cells) >= 3:
-                        # Ищем строку с СЧА
+                    
+                    # Ищем строку "Пай | число"
+                    if len(cells) >= 2:
                         cell_text = cells[0].get_text(strip=True)
-                        if 'СЧА' in cell_text or 'Чистые активы' in cell_text:
+                        if cell_text == 'Пай':
+                            price_text = cells[1].get_text(strip=True)
+                            price_value = self._parse_number(price_text)
+                            if price_value and price_value > 1.0:  # Только реальные цены
+                                fund_data['unit_price'] = price_value
+                                self.logger.info(f"Найдена цена пая: {price_value}")
+                    
+                    # Ищем строку "СЧА | число"  
+                    if len(cells) >= 2:
+                        cell_text = cells[0].get_text(strip=True)
+                        if cell_text == 'СЧА':
                             nav_text = cells[1].get_text(strip=True)
                             nav_value = self._parse_number(nav_text)
                             if nav_value:
                                 fund_data['nav'] = nav_value
-                        
-                        # Ищем строку с ценой пая
-                        if 'Цена пая' in cell_text or 'Стоимость пая' in cell_text:
-                            price_text = cells[1].get_text(strip=True)
-                            price_value = self._parse_number(price_text)
-                            if price_value:
-                                fund_data['unit_price'] = price_value
+                    
+                    # Ищем котировки Bid/Ask в таблице торгов
+                    if len(cells) >= 4:
+                        headers = [cell.get_text(strip=True) for cell in cells]
+                        if 'Bid' in headers and 'Ask' in headers:
+                            # Это заголовок, ищем следующую строку с данными
+                            continue
+                    
+                    # Если это строка с данными торгов
+                    if len(cells) == 4:
+                        try:
+                            bid_text = cells[0].get_text(strip=True)
+                            ask_text = cells[1].get_text(strip=True)
+                            
+                            bid_value = self._parse_number(bid_text)
+                            ask_value = self._parse_number(ask_text)
+                            
+                            if bid_value and ask_value and bid_value > 0:
+                                fund_data['bid_price'] = bid_value
+                                fund_data['ask_price'] = ask_value
+                                self.logger.info(f"Найдены котировки: BID={bid_value}, ASK={ask_value}")
+                        except:
+                            pass
             
-            # Вариант 2: В блоках с данными
+            # Вариант 2: Поиск цены пая в любом месте страницы
+            page_text = soup.get_text()
+            
+            # Ищем паттерны для цены пая
+            price_patterns = [
+                r'Цена пая[:\s]*([0-9,.\s]+)(?:\s*₽|руб)',
+                r'Стоимость пая[:\s]*([0-9,.\s]+)(?:\s*₽|руб)',
+                r'Стоимость\s+пая[:\s]*([0-9,.\s]+)(?:\s*₽|руб)',
+                r'цена\s*пая[:\s]*([0-9,.\s]+)(?:\s*₽|руб)',
+                r'стоимость\s*пая[:\s]*([0-9,.\s]+)(?:\s*₽|руб)',
+            ]
+            
+            for pattern in price_patterns:
+                price_match = re.search(pattern, page_text, re.IGNORECASE)
+                if price_match:
+                    price_value = self._parse_number(price_match.group(1))
+                    if price_value and price_value != 1.0:  # Исключаем подозрительные значения
+                        fund_data['unit_price'] = price_value
+                        break
+            
+            # Вариант 3: В блоках с данными
             data_blocks = soup.find_all('div', class_=['fund-info', 'fund-data', 'info-block'])
             for block in data_blocks:
                 text = block.get_text()
@@ -293,12 +353,14 @@ class InvestFundsParser:
                     if nav_value:
                         fund_data['nav'] = nav_value
                 
-                # Поиск цены пая
-                price_match = re.search(r'[Пп]ай[:\s]*([0-9,.\s]+)', text)
-                if price_match:
-                    price_value = self._parse_number(price_match.group(1))
-                    if price_value:
-                        fund_data['unit_price'] = price_value
+                # Поиск цены пая (только если текущая цена плохая)
+                if fund_data['unit_price'] <= 1.0:
+                    price_match = re.search(r'[Пп]ай[:\s]*([0-9,.\s]+)', text)
+                    if price_match:
+                        price_value = self._parse_number(price_match.group(1))
+                        if price_value and price_value > 1.0:
+                            fund_data['unit_price'] = price_value
+                            self.logger.info(f"Найдена дополнительная цена пая: {price_value}")
             
             # Вариант 2.5: Поиск в секции "Динамика стоимости пая и СЧА"
             dynamics_section = soup.find(text=re.compile(r'Динамика стоимости пая'))
@@ -311,8 +373,9 @@ class InvestFundsParser:
                         pay_pattern = re.search(r'Пай\s*(\d+\.?\d*)', section_text, re.IGNORECASE | re.MULTILINE)
                         if pay_pattern:
                             price_value = self._parse_number(pay_pattern.group(1))
-                            if price_value and 0.1 <= price_value <= 10000:
+                            if price_value and 0.1 <= price_value <= 10000 and price_value > fund_data['unit_price']:
                                 fund_data['unit_price'] = price_value
+                                self.logger.info(f"Найдена цена пая в динамике: {price_value}")
                                 break
                         parent = parent.parent
                     else:
@@ -415,8 +478,18 @@ class InvestFundsParser:
             except Exception as e:
                 self.logger.warning(f"Не удалось извлечь доходность для фонда {fund_id}: {e}")
             
+            # Парсим доходности за разные периоды
+            self.logger.info(f"Цена пая перед _parse_period_returns: {fund_data['unit_price']}")
+            self._parse_period_returns(soup, fund_data)
+            self.logger.info(f"Цена пая после _parse_period_returns: {fund_data['unit_price']}")
+            
+            # Парсим котировки и объемы
+            self._parse_quotes_and_volumes(soup, fund_data)
+            self.logger.info(f"Цена пая после _parse_quotes_and_volumes: {fund_data['unit_price']}")
+            
             # Применяем исправления для известных проблемных фондов
             fund_data = self._apply_fund_fixes(fund_data, fund_id)
+            self.logger.info(f"Цена пая после _apply_fund_fixes: {fund_data['unit_price']}")
             
             self.logger.info(f"Извлечены данные фонда {fund_id}: СЧА={fund_data['nav']}, Цена пая={fund_data['unit_price']}, УК={fund_data['management_fee']}%")
             
@@ -425,6 +498,106 @@ class InvestFundsParser:
         except Exception as e:
             self.logger.error(f"Ошибка парсинга данных фонда {fund_id}: {e}")
             return None
+
+    def _parse_period_returns(self, soup: BeautifulSoup, fund_data: Dict) -> None:
+        """Парсит доходности за разные периоды (1, 3, 6, 12, 36, 60 месяцев)"""
+        try:
+            # Ищем таблицы с доходностями
+            tables = soup.find_all('table')
+            
+            for table in tables:
+                rows = table.find_all('tr')
+                
+                # Ищем таблицу с заголовками периодов
+                for i, row in enumerate(rows):
+                    header_cells = [cell.get_text(strip=True) for cell in row.find_all(['td', 'th'])]
+                    
+                    # Проверяем, есть ли это строка с периодами
+                    if len(header_cells) >= 6 and any('мес' in cell or 'год' in cell for cell in header_cells):
+                        # Ищем следующую строку с данными
+                        if i + 1 < len(rows):
+                            data_row = rows[i + 1]
+                            data_cells = [cell.get_text(strip=True) for cell in data_row.find_all(['td', 'th'])]
+                            
+                            # Маппинг заголовков на поля
+                            for j, header in enumerate(header_cells):
+                                if j < len(data_cells) and '%' in data_cells[j]:
+                                    try:
+                                        value = float(data_cells[j].replace('%', '').replace(',', '.').strip())
+                                        
+                                        # Определяем поле по заголовку
+                                        if '1 мес' in header:
+                                            fund_data['return_1m'] = value
+                                            fund_data['monthly_return'] = value
+                                        elif '3 мес' in header:
+                                            fund_data['return_3m'] = value
+                                            fund_data['quarterly_return'] = value
+                                        elif '6 мес' in header:
+                                            fund_data['return_6m'] = value
+                                        elif '1 год' in header:
+                                            fund_data['return_12m'] = value
+                                            fund_data['annual_return'] = value
+                                        elif '3 года' in header:
+                                            fund_data['return_36m'] = value
+                                        elif '5 лет' in header:
+                                            fund_data['return_60m'] = value
+                                            
+                                        self.logger.info(f"Найдена доходность {header}: {value}%")
+                                        
+                                    except:
+                                        continue
+                            
+                            # Если нашли данные, прекращаем поиск
+                            if fund_data.get('annual_return', 0) > 0:
+                                break
+                                
+        except Exception as e:
+            self.logger.warning(f"Ошибка парсинга периодических доходностей: {e}")
+
+    def _parse_quotes_and_volumes(self, soup: BeautifulSoup, fund_data: Dict) -> None:
+        """Парсит котировки BID/ASK и объемы торгов"""
+        try:
+            # Ищем таблицы с котировками
+            tables = soup.find_all('table')
+            
+            for table in tables:
+                rows = table.find_all('tr')
+                
+                # Ищем таблицу с заголовками Bid, Ask, Объем
+                for i, row in enumerate(rows):
+                    header_cells = [cell.get_text(strip=True) for cell in row.find_all(['td', 'th'])]
+                    
+                    # Проверяем, есть ли это строка с котировками
+                    if any(header in ['Bid', 'Ask', 'Объем сделок'] for header in header_cells):
+                        # Ищем следующую строку с данными
+                        if i + 1 < len(rows):
+                            data_row = rows[i + 1]
+                            data_cells = [cell.get_text(strip=True) for cell in data_row.find_all(['td', 'th'])]
+                            
+                            # Маппинг заголовков на поля
+                            for j, header in enumerate(header_cells):
+                                if j < len(data_cells):
+                                    try:
+                                        if 'Bid' in header:
+                                            fund_data['bid_price'] = float(data_cells[j].replace(',', '.'))
+                                            self.logger.info(f"Найден Bid: {data_cells[j]}")
+                                        elif 'Ask' in header:
+                                            fund_data['ask_price'] = float(data_cells[j].replace(',', '.'))
+                                            self.logger.info(f"Найден Ask: {data_cells[j]}")
+                                        elif 'Объем сделок' in header:
+                                            # Убираем пробелы из числа
+                                            volume_str = data_cells[j].replace(' ', '').replace(',', '.')
+                                            fund_data['volume_rub'] = float(volume_str)
+                                            self.logger.info(f"Найден объем: {data_cells[j]}")
+                                    except:
+                                        continue
+                            
+                            # Если нашли котировки, прекращаем поиск
+                            if fund_data.get('bid_price', 0) > 0:
+                                break
+                                
+        except Exception as e:
+            self.logger.warning(f"Ошибка парсинга котировок и объемов: {e}")
     
     def _parse_fund_fees(self, soup: BeautifulSoup, fund_data: Dict) -> None:
         """Парсит информацию о комиссиях фонда"""

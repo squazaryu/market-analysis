@@ -91,7 +91,16 @@
                                         <th>Тикер</th>
                                         <th>Название</th>
                                         <th>СЧА (млрд ₽)</th>
-                                        <th>Доходность</th>
+                                        <th>Доходность 
+                                            <select id="return-period" class="form-select form-select-sm d-inline" style="width: auto;" onchange="updateReturnPeriod()">
+                                                <option value="annual_return">1 год</option>
+                                                <option value="return_1m">1 месяц</option>
+                                                <option value="return_3m">3 месяца</option>
+                                                <option value="return_6m">6 месяцев</option>
+                                                <option value="return_36m">3 года</option>
+                                                <option value="return_60m">5 лет</option>
+                                            </select>
+                                        </th>
                                         <th>Комиссия УК</th>
                                         <th>Ссылка</th>
                                     </tr>
@@ -137,11 +146,36 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const API_BASE = 'http://localhost:5005'; // API сервер
+        let currentTableData = []; // Сохраняем данные таблицы для переключения периодов
         
         function showStatus(message, type = 'info') {
             const statusArea = document.getElementById('status-area');
             statusArea.className = `alert alert-${type}`;
             statusArea.innerHTML = `<i class="fas fa-${type === 'success' ? 'check' : type === 'danger' ? 'times' : 'info'}-circle me-2"></i>${message}`;
+        }
+
+        function updateReturnPeriod() {
+            const selectedPeriod = document.getElementById('return-period').value;
+            renderTableData(currentTableData, selectedPeriod);
+        }
+
+        function renderTableData(data, returnPeriod = 'annual_return') {
+            const tbody = document.getElementById('funds-tbody');
+            tbody.innerHTML = '';
+            
+            data.forEach(fund => {
+                const returnValue = fund[returnPeriod] !== undefined ? fund[returnPeriod] : 0;
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><strong>${fund.ticker}</strong></td>
+                    <td>${fund.name}</td>
+                    <td>${fund.nav_billions.toFixed(1)}</td>
+                    <td><span class="badge bg-${returnValue > 10 ? 'success' : returnValue > 0 ? 'warning' : 'danger'}">${returnValue.toFixed(1)}%</span></td>
+                    <td>${fund.mgmt_fee.toFixed(2)}%</td>
+                    <td><a href="${fund.investfunds_url}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-external-link-alt"></i></a></td>
+                `;
+                tbody.appendChild(row);
+            });
         }
 
         async function loadData() {
@@ -160,21 +194,12 @@
                 const tableResponse = await fetch(`${API_BASE}/api/table?limit=20`);
                 const tableData = await tableResponse.json();
                 
-                const tbody = document.getElementById('funds-tbody');
-                tbody.innerHTML = '';
+                // Сохраняем данные для переключения периодов
+                currentTableData = tableData.data;
                 
-                tableData.data.forEach(fund => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td><strong>${fund.ticker}</strong></td>
-                        <td>${fund.name}</td>
-                        <td>${fund.nav_billions.toFixed(1)}</td>
-                        <td><span class="badge bg-${fund.annual_return > 10 ? 'success' : 'warning'}">${fund.annual_return.toFixed(1)}%</span></td>
-                        <td>${fund.mgmt_fee.toFixed(2)}%</td>
-                        <td><a href="${fund.investfunds_url}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-external-link-alt"></i></a></td>
-                    `;
-                    tbody.appendChild(row);
-                });
+                // Рендерим таблицу с выбранным периодом
+                const selectedPeriod = document.getElementById('return-period').value;
+                renderTableData(currentTableData, selectedPeriod);
                 
                 // Загружаем график
                 const chartResponse = await fetch(`${API_BASE}/api/chart`);

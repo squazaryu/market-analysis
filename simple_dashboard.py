@@ -50,6 +50,69 @@ capital_flow_analyzer = None
 temporal_engine = None
 historical_manager = None
 
+def prepare_analyzer_data(data):
+    """Подготавливает данные для CapitalFlowAnalyzer"""
+    analyzer_data = data.copy()
+    
+    # Добавляем недостающие поля
+    if 'market_cap' not in analyzer_data.columns:
+        # Рассчитываем примерную рыночную капитализацию как СЧА в рублях
+        if 'nav_billions' in analyzer_data.columns:
+            analyzer_data['market_cap'] = analyzer_data['nav_billions'] * 1_000_000_000
+        else:
+            analyzer_data['market_cap'] = analyzer_data.get('avg_daily_value_rub', 0) * 365
+    
+    # Добавляем правильный сектор на основе классификации по типу активов
+    if 'sector' not in analyzer_data.columns:
+        sectors = []
+        for _, row in analyzer_data.iterrows():
+            ticker = row.get('ticker', '')
+            name = row.get('name', '')
+            
+            try:
+                # Используем классификатор для определения сектора
+                classification = classify_fund_by_name(ticker, name, '')
+                category = classification.get('category', 'Смешанные')
+                subcategory = classification.get('subcategory', '')
+                
+                if subcategory:
+                    sector = f"{category} ({subcategory})"
+                else:
+                    sector = category
+                    
+            except Exception:
+                # Fallback - анализ по названию
+                name_lower = name.lower()
+                if 'золото' in name_lower or 'металл' in name_lower:
+                    sector = 'Драгоценные металлы'
+                elif 'облигаци' in name_lower or 'офз' in name_lower:
+                    sector = 'Облигации'
+                elif 'акци' in name_lower and ('индекс' in name_lower or 'фишк' in name_lower):
+                    sector = 'Акции'
+                elif 'технолог' in name_lower or 'ит' in name_lower:
+                    sector = 'Акции (Технологии)'
+                elif 'денежн' in name_lower or 'ликвидн' in name_lower:
+                    sector = 'Денежный рынок'
+                elif 'юан' in name_lower or 'валют' in name_lower:
+                    sector = 'Валютные'
+                else:
+                    sector = 'Смешанные'
+            
+            sectors.append(sector)
+        
+        analyzer_data['sector'] = sectors
+    
+    # Обеспечиваем наличие нужных колонок
+    volume_col = 'avg_daily_volume' if 'avg_daily_volume' in analyzer_data.columns else 'avg_daily_value_rub'
+    if 'avg_daily_volume' not in analyzer_data.columns and 'avg_daily_value_rub' in analyzer_data.columns:
+        analyzer_data['avg_daily_volume'] = analyzer_data['avg_daily_value_rub']
+    
+    # Добавляем полное название если его нет
+    if 'full_name' not in analyzer_data.columns:
+        analyzer_data['full_name'] = analyzer_data['name']
+    
+    return analyzer_data
+
 def create_initial_data():
     """Создает минимальный набор данных для инициализации дашборда"""
     try:
@@ -192,7 +255,8 @@ def load_etf_data():
         
         # Инициализируем анализаторы
         historical_manager = HistoricalDataManager()
-        capital_flow_analyzer = CapitalFlowAnalyzer(etf_data, historical_manager)
+        analyzer_data = prepare_analyzer_data(etf_data)
+        capital_flow_analyzer = CapitalFlowAnalyzer(analyzer_data, historical_manager)
         temporal_engine = TemporalAnalysisEngine(etf_data, historical_manager)
         
         print(f"✅ Загружено {len(etf_data)} ETF")
@@ -510,7 +574,15 @@ HTML_TEMPLATE = """
             <div class="col-12">
                 <div class="card">
                     <div class="card-header">
-                        <h5>🏢 Секторальный анализ</h5>
+                        <h5>🏢 Секторальный анализ <small class="text-muted">(трёхуровневая детализация: тип активов → подкатегории → фонды)</small></h5>
+                        <div class="btn-group btn-group-sm mt-2" role="group">
+                            <button type="button" class="btn btn-outline-primary active" id="sector-view-returns" onclick="switchSectorView('returns', this)">
+                                <i class="fas fa-chart-line me-1"></i>По доходности
+                            </button>
+                            <button type="button" class="btn btn-outline-info" id="sector-view-nav" onclick="switchSectorView('nav', this)">
+                                <i class="fas fa-coins me-1"></i>По СЧА
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div id="sector-analysis-plot" style="height: 700px;">
@@ -836,7 +908,7 @@ HTML_TEMPLATE = """
         function toggleChart(type, element) {
             // Убираем active у всех кнопок в группе
             const buttons = element.parentElement.querySelectorAll('.btn');
-            buttons.forEach(btn => btn.classList.remove('active'));
+            buttons.forEach(function(btn) { btn.classList.remove('active'); });
             
             // Добавляем active к нажатой кнопке
             element.classList.add('active');
@@ -851,7 +923,7 @@ HTML_TEMPLATE = """
         function filterRecs(type, element) {
             // Убираем active у всех кнопок в группе
             const buttons = element.parentElement.querySelectorAll('.btn');
-            buttons.forEach(btn => btn.classList.remove('active'));
+            buttons.forEach(function(btn) { btn.classList.remove('active'); });
             
             // Добавляем active к нажатой кнопке
             element.classList.add('active');
@@ -870,21 +942,323 @@ HTML_TEMPLATE = """
         }
 
         // Показать уведомление
-        function showAlert(message, type = 'info') {
+        function showAlert(message, type) {
+            if (typeof type === 'undefined') type = 'info';
             const alertDiv = document.createElement('div');
-            alertDiv.className = `alert alert-${type === 'success' ? 'success' : 'info'} alert-dismissible fade show position-fixed`;
+            alertDiv.className = 'alert alert-' + (type === 'success' ? 'success' : 'info') + ' alert-dismissible fade show position-fixed';
             alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 1050; min-width: 300px;';
-            alertDiv.innerHTML = `
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
+            alertDiv.innerHTML = message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
             document.body.appendChild(alertDiv);
             
-            setTimeout(() => {
+            setTimeout(function() {
                 if (alertDiv.parentElement) {
                     alertDiv.remove();
                 }
             }, 5000);
+        }
+
+        // Функция показа детального анализа секторов (уровень 2)
+        function showDetailedSectorAnalysis(assetGroup, detailData) {
+            // Определяем что показывать в зависимости от текущего режима
+            const currentView = window.currentSectorView || 'returns';
+            
+            let yValues, yTitle, chartTitle;
+            
+            if (currentView === 'returns') {
+                yValues = detailData.returns;
+                yTitle = 'Средняя доходность (%)';
+                chartTitle = '📊 ' + assetGroup + ' - Доходность (кликните на подкатегорию для просмотра фондов)';
+            } else {
+                yValues = detailData.nav_totals;
+                yTitle = 'СЧА (млрд ₽)';
+                chartTitle = '📊 ' + assetGroup + ' - СЧА (кликните на подкатегорию для просмотра фондов)';
+            }
+            
+            const detailChartData = [{
+                x: detailData.sectors,
+                y: yValues,
+                type: 'bar',
+                name: yTitle,
+                marker: {
+                    color: currentView === 'returns' ? 
+                        yValues.map(function(r) {
+                            return r > 20 ? '#28a745' : 
+                                   r > 10 ? '#17a2b8' : 
+                                   r > 0 ? '#ffc107' : '#dc3545';
+                        }) :
+                        yValues.map(function(nav) {
+                            return nav > 100 ? '#1f77b4' : 
+                                   nav > 50 ? '#ff7f0e' : 
+                                   nav > 10 ? '#2ca02c' : '#d62728';
+                        })
+                },
+                customdata: detailData.counts,
+                hovertemplate: '<b>%{x}</b><br>' +
+                             (currentView === 'returns' ? 'Доходность: %{y}%<br>' : 'СЧА: %{y} млрд ₽<br>') +
+                             'Фондов: %{customdata}<br>' +
+                             '<extra></extra>'
+            }];
+            
+            const detailLayout = {
+                title: chartTitle,
+                xaxis: {
+                    title: 'Подкатегории',
+                    tickangle: -45
+                },
+                yaxis: {title: yTitle},
+                height: 500,
+                margin: {b: 120}
+            };
+            
+            // Обновляем график с детализацией
+            Plotly.newPlot('sector-analysis-plot', detailChartData, detailLayout, {responsive: true});
+            
+            // Добавляем обработчик кликов для третьего уровня (фонды)
+            document.getElementById('sector-analysis-plot').on('plotly_click', function(eventData) {
+                const point = eventData.points[0];
+                const subCategory = point.x;
+                
+                if (window.sectorFundsByCategory && 
+                    window.sectorFundsByCategory[assetGroup] && 
+                    window.sectorFundsByCategory[assetGroup][subCategory]) {
+                    showFundsList(assetGroup, subCategory, window.sectorFundsByCategory[assetGroup][subCategory]);
+                }
+            });
+            
+            // Добавляем кнопку "Назад к общему обзору"
+            updateNavigationButtons([
+                {
+                    text: '← К общему обзору',
+                    action: function() {
+                        Plotly.newPlot('sector-analysis-plot', window.sectorMainData.data, window.sectorMainData.layout, {responsive: true});
+                        // Переподключаем основной обработчик кликов
+                        document.getElementById('sector-analysis-plot').on('plotly_click', function(eventData) {
+                            const point = eventData.points[0];
+                            const assetGroup = point.x;
+                            if (window.sectorDetailedData && window.sectorDetailedData[assetGroup]) {
+                                showDetailedSectorAnalysis(assetGroup, window.sectorDetailedData[assetGroup]);
+                            }
+                        });
+                        clearNavigationButtons();
+                    }
+                }
+            ]);
+            
+            showAlert('Показаны подкатегории "' + assetGroup + '". Кликните на столбец для просмотра фондов', 'info');
+        }
+
+        // Функция показа списка фондов (уровень 3)
+        function showFundsList(assetGroup, subCategory, fundsData) {
+            const funds = fundsData.funds;
+            const currentView = window.currentSectorView || 'returns';
+            
+            let yValues, yTitle, chartTitle;
+            
+            if (currentView === 'returns') {
+                yValues = funds.map(function(f) { return f.annual_return; });
+                yTitle = 'Доходность (%)';
+                chartTitle = '📈 Фонды: ' + assetGroup + ' → ' + subCategory + ' - Доходность';
+            } else {
+                yValues = funds.map(function(f) { return f.nav_billions; });
+                yTitle = 'СЧА (млрд ₽)';
+                chartTitle = '📈 Фонды: ' + assetGroup + ' → ' + subCategory + ' - СЧА';
+            }
+            
+            // Создаем график с фондами
+            const fundsChartData = [{
+                x: funds.map(function(f) { return f.ticker; }),
+                y: yValues,
+                type: 'bar',
+                name: yTitle,
+                marker: {
+                    color: currentView === 'returns' ? 
+                        yValues.map(function(val) {
+                            return val > 20 ? '#28a745' : 
+                                   val > 10 ? '#17a2b8' : 
+                                   val > 0 ? '#ffc107' : '#dc3545';
+                        }) :
+                        yValues.map(function(nav) {
+                            return nav > 10 ? '#1f77b4' : 
+                                   nav > 5 ? '#ff7f0e' : 
+                                   nav > 1 ? '#2ca02c' : '#d62728';
+                        })
+                },
+                customdata: funds.map(function(f) {
+                    return {
+                        name: f.name,
+                        volatility: f.volatility,
+                        nav: f.nav_billions,
+                        annual_return: f.annual_return
+                    };
+                }),
+                hovertemplate: '<b>%{x}</b><br>' +
+                             '%{customdata.name}<br>' +
+                             'Доходность: %{customdata.annual_return}%<br>' +
+                             'Волатильность: %{customdata.volatility}%<br>' +
+                             'СЧА: %{customdata.nav} млрд ₽<br>' +
+                             '<extra></extra>'
+            }];
+            
+            const fundsLayout = {
+                title: chartTitle,
+                xaxis: {
+                    title: 'Тикеры фондов',
+                    tickangle: -45
+                },
+                yaxis: {title: yTitle},
+                height: 500,
+                margin: {b: 120}
+            };
+            
+            // Обновляем график со списком фондов
+            Plotly.newPlot('sector-analysis-plot', fundsChartData, fundsLayout, {responsive: true});
+            
+            // Добавляем навигационные кнопки
+            updateNavigationButtons([
+                {
+                    text: '← К подкатегориям',
+                    action: function() {
+                        showDetailedSectorAnalysis(assetGroup, window.sectorDetailedData[assetGroup]);
+                    }
+                },
+                {
+                    text: '← К общему обзору',
+                    action: function() {
+                        Plotly.newPlot('sector-analysis-plot', window.sectorMainData.data, window.sectorMainData.layout, {responsive: true});
+                        document.getElementById('sector-analysis-plot').on('plotly_click', function(eventData) {
+                            const point = eventData.points[0];
+                            const assetGroup = point.x;
+                            if (window.sectorDetailedData && window.sectorDetailedData[assetGroup]) {
+                                showDetailedSectorAnalysis(assetGroup, window.sectorDetailedData[assetGroup]);
+                            }
+                        });
+                        clearNavigationButtons();
+                    }
+                }
+            ]);
+            
+            showAlert('Показаны фонды в категории "' + subCategory + '" (' + funds.length + ' фондов)', 'info');
+        }
+
+        // Функция управления навигационными кнопками
+        function updateNavigationButtons(buttons) {
+            const plotContainer = document.getElementById('sector-analysis-plot').parentElement;
+            
+            // Удаляем существующие кнопки
+            clearNavigationButtons();
+            
+            // Добавляем новые кнопки
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'sector-nav-buttons mt-3';
+            
+            buttons.forEach(function(button) {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-secondary btn-sm me-2';
+                btn.innerHTML = button.text;
+                btn.onclick = button.action;
+                buttonContainer.appendChild(btn);
+            });
+            
+            plotContainer.appendChild(buttonContainer);
+        }
+        
+        function clearNavigationButtons() {
+            const plotContainer = document.getElementById('sector-analysis-plot').parentElement;
+            const existingButtons = plotContainer.querySelector('.sector-nav-buttons');
+            if (existingButtons) {
+                existingButtons.remove();
+            }
+        }
+
+        // Функция переключения режима отображения секторального анализа
+        function switchSectorView(viewType, buttonElement) {
+            // Обновляем активную кнопку
+            const buttons = buttonElement.parentElement.querySelectorAll('.btn');
+            buttons.forEach(function(btn) { btn.classList.remove('active'); });
+            buttonElement.classList.add('active');
+            
+            // Сохраняем текущий режим
+            window.currentSectorView = viewType;
+            
+            if (!window.sectorRawData) {
+                showAlert('Данные ещё загружаются...', 'warning');
+                return;
+            }
+            
+            // Создаем новые данные для графика
+            const rawData = window.sectorRawData;
+            const assetGroups = rawData.data[0].x;
+            
+            let yValues, yTitle, chartTitle;
+            
+            if (viewType === 'returns') {
+                yValues = rawData.data[0].y; // Доходность
+                yTitle = 'Средняя доходность (%)';
+                chartTitle = '🏢 Анализ по типам активов - Доходность (кликните для детализации)';
+            } else {
+                // Получаем данные по СЧА из summary или пересчитываем
+                yValues = [];
+                for (let i = 0; i < assetGroups.length; i++) {
+                    const assetGroup = assetGroups[i];
+                    let totalNav = 0;
+                    
+                    // Суммируем СЧА по всем подкатегориям в группе
+                    if (rawData.detailed_data[assetGroup]) {
+                        totalNav = rawData.detailed_data[assetGroup].nav_totals.reduce(function(sum, nav) { return sum + nav; }, 0);
+                    }
+                    
+                    yValues.push(totalNav);
+                }
+                yTitle = 'Общая СЧА (млрд ₽)';
+                chartTitle = '🏢 Анализ по типам активов - СЧА (кликните для детализации)';
+            }
+            
+            // Создаем новые данные для графика
+            const newChartData = [{
+                x: assetGroups,
+                y: yValues,
+                type: 'bar',
+                name: yTitle,
+                marker: {
+                    color: viewType === 'returns' ? 
+                        ['#2E8B57', '#4169E1', '#FF6347', '#FFD700', '#8A2BE2'].slice(0, assetGroups.length) :
+                        ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'].slice(0, assetGroups.length)
+                },
+                customdata: rawData.data[0].customdata,
+                hovertemplate: '<b>%{x}</b><br>' +
+                             (viewType === 'returns' ? 'Доходность: %{y}%<br>' : 'СЧА: %{y} млрд ₽<br>') +
+                             'Фондов: %{customdata}<br>' +
+                             '<extra></extra>'
+            }];
+            
+            const newLayout = {
+                title: chartTitle,
+                xaxis: { title: 'Тип активов' },
+                yaxis: { title: yTitle },
+                height: 500,
+                hovermode: 'closest'
+            };
+            
+            // Обновляем график
+            Plotly.newPlot('sector-analysis-plot', newChartData, newLayout, {responsive: true});
+            
+            // Обновляем сохранённые основные данные
+            window.sectorMainData = {data: newChartData, layout: newLayout};
+            
+            // Переподключаем обработчик кликов
+            document.getElementById('sector-analysis-plot').on('plotly_click', function(eventData) {
+                const point = eventData.points[0];
+                const assetGroup = point.x;
+                if (window.sectorDetailedData && window.sectorDetailedData[assetGroup]) {
+                    showDetailedSectorAnalysis(assetGroup, window.sectorDetailedData[assetGroup]);
+                }
+            });
+            
+            // Очищаем навигационные кнопки если есть
+            clearNavigationButtons();
+            
+            const viewTypeText = viewType === 'returns' ? 'доходности' : 'СЧА';
+            showAlert('Переключено отображение по ' + viewTypeText, 'info');
         }
 
         // Обновление данных
@@ -1301,8 +1675,9 @@ HTML_TEMPLATE = """
                 
                 const content = document.getElementById('detailed-stats-content');
                 
-                const html = `
-                    <div class="row">
+                let html = `
+                    <!-- Основные метрики -->
+                    <div class="row mb-4">
                         <div class="col-md-3">
                             <div class="card bg-primary text-white">
                                 <div class="card-body text-center">
@@ -1323,7 +1698,7 @@ HTML_TEMPLATE = """
                             <div class="card bg-warning text-white">
                                 <div class="card-body text-center">
                                     <h4>${data.overview.avg_volatility}%</h4>
-                                    <p class="mb-0">Средняя волатильность</p>
+                                    <p class="mb-0">Средний риск</p>
                                 </div>
                             </div>
                         </div>
@@ -1337,48 +1712,113 @@ HTML_TEMPLATE = """
                         </div>
                     </div>
                     
-                    <div class="row mt-4">
+                    <div class="row">
+                        <!-- Лидеры рынка -->
                         <div class="col-md-6">
-                            <h6>🏆 Лидеры рынка</h6>
-                            <ul class="list-group">
-                                <li class="list-group-item d-flex justify-content-between">
-                                    <span>Лучшая доходность:</span>
-                                    <strong class="text-success">${data.top_performers.best_return.ticker} (${data.top_performers.best_return.value}%)</strong>
-                                </li>
-                                <li class="list-group-item d-flex justify-content-between">
-                                    <span>Лучший Sharpe:</span>
-                                    <strong class="text-primary">${data.top_performers.best_sharpe.ticker} (${data.top_performers.best_sharpe.value})</strong>
-                                </li>
-                                <li class="list-group-item d-flex justify-content-between">
-                                    <span>Наименьшая волатильность:</span>
-                                    <strong class="text-info">${data.top_performers.lowest_volatility.ticker} (${data.top_performers.lowest_volatility.value}%)</strong>
-                                </li>
-                                <li class="list-group-item d-flex justify-content-between">
-                                    <span>Наибольший объем:</span>
-                                    <strong class="text-warning">${data.top_performers.highest_volume.ticker}</strong>
-                                </li>
-                            </ul>
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">🏆 Лидеры рынка</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <span><strong>Лучшая доходность:</strong></span>
+                                            <span class="badge bg-success">${data.top_performers.best_return.ticker}</span>
+                                        </div>
+                                        <small class="text-muted">${data.top_performers.best_return.name}</small>
+                                        <div class="text-end"><span class="text-success fw-bold">${data.top_performers.best_return.value}%</span></div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <span><strong>Лучший Sharpe:</strong></span>
+                                            <span class="badge bg-primary">${data.top_performers.best_sharpe.ticker}</span>
+                                        </div>
+                                        <small class="text-muted">${data.top_performers.best_sharpe.name}</small>
+                                        <div class="text-end"><span class="text-primary fw-bold">${data.top_performers.best_sharpe.value}</span></div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <span><strong>Наименьший риск:</strong></span>
+                                            <span class="badge bg-info">${data.top_performers.lowest_volatility.ticker}</span>
+                                        </div>
+                                        <small class="text-muted">${data.top_performers.lowest_volatility.name}</small>
+                                        <div class="text-end"><span class="text-info fw-bold">${data.top_performers.lowest_volatility.value}%</span></div>
+                                    </div>
+                                    
+                                    <div class="mb-0">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <span><strong>Наибольший объем:</strong></span>
+                                            <span class="badge bg-warning text-dark">${data.top_performers.highest_volume.ticker}</span>
+                                        </div>
+                                        <small class="text-muted">${data.top_performers.highest_volume.name}</small>
+                                        <div class="text-end"><span class="text-warning fw-bold">${(data.top_performers.highest_volume.value / 1000000).toFixed(0)}M ₽</span></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
+                        
+                        <!-- Распределение по типам активов -->
                         <div class="col-md-6">
-                            <h6>📊 Распределение по доходности</h6>
-                            <div class="progress mb-2">
-                                <div class="progress-bar bg-danger" style="width: ${(data.distribution.return_ranges.negative / data.overview.total_etfs * 100).toFixed(1)}%">
-                                    Отрицательная (${data.distribution.return_ranges.negative})
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">📈 Структура рынка БПИФ</h6>
                                 </div>
-                            </div>
-                            <div class="progress mb-2">
-                                <div class="progress-bar bg-warning" style="width: ${(data.distribution.return_ranges.low_0_10 / data.overview.total_etfs * 100).toFixed(1)}%">
-                                    0-10% (${data.distribution.return_ranges.low_0_10})
-                                </div>
-                            </div>
-                            <div class="progress mb-2">
-                                <div class="progress-bar bg-info" style="width: ${(data.distribution.return_ranges.medium_10_20 / data.overview.total_etfs * 100).toFixed(1)}%">
-                                    10-20% (${data.distribution.return_ranges.medium_10_20})
-                                </div>
-                            </div>
-                            <div class="progress mb-2">
-                                <div class="progress-bar bg-success" style="width: ${(data.distribution.return_ranges.high_20_plus / data.overview.total_etfs * 100).toFixed(1)}%">
-                                    20%+ (${data.distribution.return_ranges.high_20_plus})
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <h6 class="text-muted mb-2">По типам активов:</h6>
+                `;
+                
+                // Сектора по типам активов
+                const totalFunds = data.overview.total_etfs;
+                let sectorHtml = '';
+                for (const [sector, count] of Object.entries(data.sector_breakdown)) {
+                    const percentage = (count / totalFunds * 100).toFixed(1);
+                    const shortSector = sector.split('(')[0].trim();
+                    sectorHtml += `
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <small>${shortSector}:</small>
+                            <span class="badge bg-secondary">${count} (${percentage}%)</span>
+                        </div>
+                    `;
+                }
+                html += sectorHtml;
+                
+                // Анализ риск-доходность
+                if (data.risk_return_analysis) {
+                    html += `
+                                    </div>
+                                    <div class="mb-3">
+                                        <h6 class="text-muted mb-2">По уровню риска:</h6>
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <small>Консервативные (&lt; 10%):</small>
+                                            <span class="badge bg-success">${data.risk_return_analysis.conservative_funds}</span>
+                                        </div>
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <small>Умеренные (10-20%):</small>
+                                            <span class="badge bg-warning text-dark">${data.risk_return_analysis.moderate_funds}</span>
+                                        </div>
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <small>Агрессивные (&gt; 20%):</small>
+                                            <span class="badge bg-danger">${data.risk_return_analysis.aggressive_funds}</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h6 class="text-muted mb-2">Доходность:</h6>
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <small>Высокодоходные (&gt; 15%):</small>
+                                            <span class="badge bg-success">${data.risk_return_analysis.high_return_funds}</span>
+                                        </div>
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <small>Положительный Sharpe:</small>
+                                            <span class="badge bg-primary">${data.risk_return_analysis.positive_sharpe}</span>
+                                        </div>
+                                    </div>
+                    `;
+                }
+                
+                html += `
                                 </div>
                             </div>
                         </div>
@@ -1386,11 +1826,10 @@ HTML_TEMPLATE = """
                 `;
                 
                 content.innerHTML = html;
-                
             } catch (error) {
                 console.error('Ошибка загрузки детальной статистики:', error);
                 document.getElementById('detailed-stats-content').innerHTML = 
-                    '<div class="alert alert-danger">Ошибка загрузки детальной статистики</div>';
+                    '<div class="alert alert-danger">Ошибка загрузки данных</div>';
             }
         }
 
@@ -1452,41 +1891,71 @@ HTML_TEMPLATE = """
                 for (const [key, rec] of Object.entries(data)) {
                     if (filter !== 'all' && key !== filter) continue;
                     
+                    // Цвет карточки по типу портфеля
+                    let cardColor = 'primary';
+                    if (key === 'conservative') cardColor = 'success';
+                    else if (key === 'balanced') cardColor = 'warning';
+                    else if (key === 'aggressive') cardColor = 'danger';
+                    
                     html += `
                         <div class="col-md-4 mb-3">
-                            <div class="card border-primary">
-                                <div class="card-header bg-primary text-white">
+                            <div class="card border-${cardColor}">
+                                <div class="card-header bg-${cardColor} text-white">
                                     <h6 class="mb-0">${rec.title}</h6>
                                 </div>
                                 <div class="card-body">
-                                    <p class="small">${rec.description}</p>
+                                    <p class="small text-muted">${rec.description}</p>
+                    `;
+                    
+                    if (rec.etfs && rec.etfs.length > 0) {
+                        html += `
                                     <div class="table-responsive">
                                         <table class="table table-sm">
                                             <thead>
                                                 <tr>
                                                     <th>Тикер</th>
+                                                    <th>Сектор</th>
                                                     <th>Доходность</th>
-                                                    <th>Sharpe</th>
+                                                    <th>Риск</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                    `;
-                    
-                    rec.etfs.slice(0, 3).forEach(etf => {
-                        const returnClass = etf.annual_return > 15 ? 'text-success' : 'text-danger';
-                        html += `
-                            <tr>
-                                <td><strong>${etf.ticker}</strong></td>
-                                <td class="${returnClass}">${etf.annual_return.toFixed(1)}%</td>
-                                <td>${etf.sharpe_ratio.toFixed(2)}</td>
-                            </tr>
                         `;
-                    });
-                    
-                    html += `
+                        
+                        rec.etfs.slice(0, 4).forEach(etf => {
+                            const returnClass = etf.annual_return > 10 ? 'text-success' : 
+                                              etf.annual_return > 0 ? 'text-warning' : 'text-danger';
+                            const volatilityClass = etf.volatility < 15 ? 'text-success' : 
+                                                  etf.volatility < 25 ? 'text-warning' : 'text-danger';
+                            
+                            // Сокращаем сектор для отображения
+                            const shortSector = etf.sector ? etf.sector.split('(')[0].trim() : 'Н/Д';
+                            
+                            html += `
+                                <tr>
+                                    <td><strong>${etf.ticker}</strong></td>
+                                    <td><small>${shortSector}</small></td>
+                                    <td class="${returnClass}">${etf.annual_return.toFixed(1)}%</td>
+                                    <td class="${volatilityClass}">${etf.volatility.toFixed(1)}%</td>
+                                </tr>
+                            `;
+                        });
+                        
+                        html += `
                                             </tbody>
                                         </table>
                                     </div>
+                        `;
+                    } else {
+                        html += `
+                                    <div class="alert alert-info">
+                                        <i class="fas fa-info-circle"></i> 
+                                        Нет подходящих фондов для данной стратегии
+                                    </div>
+                        `;
+                    }
+                    
+                    html += `
                                 </div>
                             </div>
                         </div>
@@ -1525,14 +1994,34 @@ HTML_TEMPLATE = """
                     document.getElementById('risk-return-plot').innerHTML = '<div class="alert alert-danger">Ошибка загрузки графика</div>';
                   });
                 
-                // Секторальный анализ
+                // Секторальный анализ с интерактивностью
                 fetch('/api/sector-analysis')
                   .then(response => response.json())
                   .then(data => {
                     if (data.data && data.layout) {
                       // Очищаем контейнер от спиннера
                       document.getElementById('sector-analysis-plot').innerHTML = '';
+                      
+                      // Создаем основной график
                       Plotly.newPlot('sector-analysis-plot', data.data, data.layout, {responsive: true});
+                      
+                      // Сохраняем данные для детализации
+                      window.sectorDetailedData = data.detailed_data;
+                      window.sectorFundsByCategory = data.funds_by_category;
+                      window.sectorMainData = {data: data.data, layout: data.layout};
+                      window.sectorRawData = data; // Сохраняем все исходные данные
+                      window.currentSectorView = 'returns'; // По умолчанию показываем доходность
+                      
+                      // Добавляем обработчик кликов для детализации
+                      document.getElementById('sector-analysis-plot').on('plotly_click', function(eventData) {
+                        const point = eventData.points[0];
+                        const assetGroup = point.x;
+                        
+                        if (window.sectorDetailedData && window.sectorDetailedData[assetGroup]) {
+                          showDetailedSectorAnalysis(assetGroup, window.sectorDetailedData[assetGroup]);
+                        }
+                      });
+                      
                       console.log('✅ Секторальный анализ загружен');
                     }
                   })
@@ -2307,8 +2796,27 @@ def api_table():
                     # Пересчитываем волатильность и Sharpe на основе реальной доходности
                     annual_ret = real_data.get('annual_return', 0)
                     if annual_ret > 0:
-                        # Простая оценка волатильности на базе доходности
-                        volatility = max(5.0, min(50.0, abs(annual_ret) * 1.5))  # От 5% до 50%
+                        # Используем правильный расчет волатильности по типу активов
+                        from auto_fund_classifier import classify_fund_by_name
+                        
+                        fund_name = real_data.get('name', '')
+                        classification = classify_fund_by_name(ticker, fund_name, "")
+                        asset_type = classification['category'].lower()
+                        
+                        # Базовая волатильность по типам активов
+                        if 'денежн' in asset_type:
+                            volatility = max(1.0, min(5.0, 2.0 + abs(annual_ret) * 0.1))
+                        elif 'облигац' in asset_type:
+                            volatility = max(3.0, min(12.0, 5.0 + abs(annual_ret) * 0.3))
+                        elif 'золот' in asset_type or 'драгоценн' in asset_type:
+                            volatility = max(10.0, min(25.0, 15.0 + abs(annual_ret) * 0.5))
+                        elif 'валютн' in asset_type:
+                            volatility = max(5.0, min(15.0, 8.0 + abs(annual_ret) * 0.4))
+                        elif 'акци' in asset_type:
+                            volatility = max(15.0, min(40.0, 20.0 + abs(annual_ret) * 0.8))
+                        else:
+                            volatility = max(8.0, min(25.0, 12.0 + abs(annual_ret) * 0.6))
+                        
                         funds_with_nav.at[idx, 'volatility'] = volatility
                         
                         # Пересчитываем Sharpe ratio
@@ -2542,71 +3050,232 @@ def api_recommendations():
         return jsonify({})
     
     try:
+        # Подготавливаем данные с правильными секторами и метриками
+        analyzer_data = prepare_analyzer_data(etf_data)
+        
         # Добавляем sharpe_ratio если его нет
-        if 'sharpe_ratio' not in etf_data.columns:
-            etf_data['sharpe_ratio'] = (etf_data['annual_return'] - 15) / etf_data['volatility']
+        if 'sharpe_ratio' not in analyzer_data.columns:
+            analyzer_data['sharpe_ratio'] = (analyzer_data['annual_return'] - 5) / analyzer_data['volatility'].clip(lower=0.1)
+        
+        # Фильтруем данные с валидными значениями
+        valid_data = analyzer_data[
+            (analyzer_data['annual_return'].notna()) & 
+            (analyzer_data['volatility'].notna()) & 
+            (analyzer_data['volatility'] > 0) &
+            (analyzer_data['annual_return'] > -100)  # исключаем аномальные значения
+        ].copy()
+        
+        # Консервативный портфель: облигации, денежный рынок, золото
+        conservative_sectors = ['Облигации', 'Денежный рынок', 'Драгоценные металлы']
+        conservative_data = valid_data[
+            (valid_data['sector'].str.contains('|'.join(conservative_sectors), case=False, na=False)) &
+            (valid_data['volatility'] < 20) &
+            (valid_data['annual_return'] > -5)
+        ]
+        
+        # Сбалансированный портфель: смесь акций и облигаций
+        balanced_sectors = ['Акции', 'Смешанные', 'Защитные активы']
+        balanced_data = valid_data[
+            (
+                (valid_data['sector'].str.contains('|'.join(balanced_sectors), case=False, na=False)) |
+                (valid_data['sector'].str.contains('Облигации', case=False, na=False))
+            ) &
+            (valid_data['volatility'] >= 10) & 
+            (valid_data['volatility'] <= 30) &
+            (valid_data['annual_return'] > -10)
+        ]
+        
+        # Агрессивный портфель: акции с высокой доходностью
+        aggressive_data = valid_data[
+            (valid_data['sector'].str.contains('Акции', case=False, na=False)) &
+            (valid_data['annual_return'] > 5) &
+            (valid_data['avg_daily_volume'] > 1000000)  # высокая ликвидность
+        ]
         
         recommendations = {
             'conservative': {
                 'title': 'Консервативный портфель',
-                'description': 'Низкий риск, стабильная доходность',
-                'etfs': etf_data[(etf_data['volatility'] < 15) & (etf_data['sharpe_ratio'] > 0.5)]
-                       .nlargest(5, 'sharpe_ratio')[['ticker', 'annual_return', 'volatility', 'sharpe_ratio']]
-                       .to_dict('records')
+                'description': 'Низкий риск: облигации, денежный рынок, золото',
+                'etfs': conservative_data.nlargest(5, 'sharpe_ratio')[['ticker', 'full_name', 'sector', 'annual_return', 'volatility', 'sharpe_ratio']]
+                       .round(2).to_dict('records') if len(conservative_data) > 0 else []
             },
             'balanced': {
-                'title': 'Сбалансированный портфель',
-                'description': 'Средний риск, умеренная доходность',
-                'etfs': etf_data[(etf_data['volatility'] >= 15) & (etf_data['volatility'] <= 25) & (etf_data['sharpe_ratio'] > 0.3)]
-                       .nlargest(5, 'sharpe_ratio')[['ticker', 'annual_return', 'volatility', 'sharpe_ratio']]
-                       .to_dict('records')
+                'title': 'Сбалансированный портфель', 
+                'description': 'Средний риск: смесь акций и облигаций',
+                'etfs': balanced_data.nlargest(5, 'sharpe_ratio')[['ticker', 'full_name', 'sector', 'annual_return', 'volatility', 'sharpe_ratio']]
+                       .round(2).to_dict('records') if len(balanced_data) > 0 else []
             },
             'aggressive': {
                 'title': 'Агрессивный портфель',
-                'description': 'Высокий риск, высокая потенциальная доходность',
-                'etfs': etf_data[etf_data['annual_return'] > 20]
-                       .nlargest(5, 'annual_return')[['ticker', 'annual_return', 'volatility', 'sharpe_ratio']]
-                       .to_dict('records')
+                'description': 'Высокий риск: акции с высокой доходностью',
+                'etfs': aggressive_data.nlargest(5, 'annual_return')[['ticker', 'full_name', 'sector', 'annual_return', 'volatility', 'sharpe_ratio']]
+                       .round(2).to_dict('records') if len(aggressive_data) > 0 else []
             }
         }
         
         return jsonify(recommendations)
     except Exception as e:
+        print(f"Ошибка в api_recommendations: {e}")
         return jsonify({})
 
 @app.route('/api/sector-analysis')
 def api_sector_analysis():
-    """API секторального анализа"""
+    """API секторального анализа с группировкой по типам активов"""
     if etf_data is None or len(etf_data) == 0:
         return jsonify({'error': 'Данные не загружены'})
     
     try:
-        # Простой секторальный анализ
-        sector_stats = etf_data.groupby('category').agg({
+        # Подготавливаем данные с правильными секторами
+        analyzer_data = prepare_analyzer_data(etf_data)
+        
+        # Функция улучшенной группировки по основным типам активов
+        def group_by_asset_type(sector, ticker='', name=''):
+            sector_lower = sector.lower()
+            name_lower = name.lower() if name else ''
+            
+            # Специальная обработка валютных фондов
+            if 'валютн' in sector_lower or 'валют' in sector_lower:
+                if 'облигации' in name_lower or 'облигац' in name_lower:
+                    return 'Облигации'
+                elif ('ликвидность' in name_lower or 'накопительный' in name_lower or 
+                      'сберегательный' in name_lower):
+                    return 'Денежный рынок'
+                else:
+                    return 'Смешанные'
+            
+            # Антиинфляционные фонды относим к смешанным
+            elif 'защитн' in sector_lower or 'антиинфляц' in sector_lower:
+                return 'Смешанные'
+            
+            # Драгоценные металлы остаются товарами
+            elif 'золот' in sector_lower or 'драгоценн' in sector_lower or 'металл' in sector_lower:
+                return 'Товары'
+            
+            # Остальные категории без изменений
+            elif 'акци' in sector_lower:
+                return 'Акции'
+            elif 'облига' in sector_lower:
+                return 'Облигации'
+            elif 'денежн' in sector_lower or 'ликвидн' in sector_lower:
+                return 'Денежный рынок'
+            elif 'смешанн' in sector_lower or 'диверс' in sector_lower:
+                return 'Смешанные'
+            else:
+                return 'Другие'
+        
+        # Добавляем группировку по типам активов с учетом названий
+        analyzer_data['asset_group'] = analyzer_data.apply(
+            lambda row: group_by_asset_type(row['sector'], row.get('ticker', ''), row.get('name', '')), 
+            axis=1
+        )
+        
+        # Основная статистика по типам активов
+        asset_stats = analyzer_data.groupby('asset_group').agg({
             'annual_return': 'mean',
-            'volatility': 'mean',
-            'ticker': 'count'
+            'volatility': 'mean', 
+            'ticker': 'count',
+            'nav_billions': 'sum'
         }).round(2)
         
-        categories = sector_stats.index.tolist()
+        # Создаем улучшенную детализацию с учетом валютных и специальных фондов
+        def get_detailed_sector(row):
+            sector_lower = row['sector'].lower()
+            name_lower = row.get('name', '').lower()
+            
+            if 'валютн' in sector_lower:
+                if 'облигации' in name_lower:
+                    return 'Облигации в валюте'
+                elif 'ликвидность' in name_lower or 'сберегательный' in name_lower or 'накопительный' in name_lower:
+                    return 'Денежный рынок в валюте'
+                elif 'юан' in name_lower or 'cny' in name_lower:
+                    return 'Инструменты в юанях'
+                else:
+                    return 'Смешанные валютные'
+            elif 'антиинфляц' in sector_lower or 'защитн' in sector_lower:
+                return 'Антиинфляционные'
+            elif 'золот' in sector_lower or 'драгоценн' in sector_lower:
+                if 'плюс' in name_lower or 'рынок' in name_lower:
+                    return 'Расширенные товарные корзины'
+                else:
+                    return 'Золото'
+            else:
+                return row['sector']
         
-        # Простой bar chart
-        fig_data = [{
-            'x': categories,
-            'y': sector_stats['annual_return'].tolist(),
+        analyzer_data['detailed_sector'] = analyzer_data.apply(get_detailed_sector, axis=1)
+        
+        # Детальная статистика по улучшенным секторам внутри каждого типа
+        detailed_stats = analyzer_data.groupby(['asset_group', 'detailed_sector']).agg({
+            'annual_return': 'mean',
+            'volatility': 'mean',
+            'ticker': 'count',
+            'nav_billions': 'sum'
+        }).round(2)
+        
+        # Подготовка данных для основного графика (типы активов)
+        asset_groups = asset_stats.index.tolist()
+        
+        main_chart_data = [{
+            'x': asset_groups,
+            'y': asset_stats['annual_return'].tolist(),
             'type': 'bar',
             'name': 'Средняя доходность (%)',
-            'marker': {'color': 'lightgreen'}
+            'marker': {
+                'color': ['#2E8B57', '#4169E1', '#FF6347', '#FFD700', '#8A2BE2', '#FF69B4'][:len(asset_groups)]
+            },
+            'customdata': asset_stats['ticker'].tolist(),
+            'hovertemplate': '<b>%{x}</b><br>' +
+                           'Доходность: %{y}%<br>' +
+                           'Фондов: %{customdata}<br>' +
+                           '<extra></extra>'
         }]
         
+        # Подготовка данных для детального анализа с информацией о фондах
+        detailed_data = {}
+        funds_by_category = {}
+        
+        for asset_group in asset_groups:
+            if asset_group in detailed_stats.index:
+                group_data = detailed_stats.loc[asset_group]
+                if not group_data.empty:
+                    detailed_data[asset_group] = {
+                        'sectors': group_data.index.tolist(),
+                        'returns': group_data['annual_return'].tolist(),
+                        'volatilities': group_data['volatility'].tolist(),
+                        'counts': group_data['ticker'].tolist(),
+                        'nav_totals': group_data['nav_billions'].tolist()
+                    }
+                    
+                    # Собираем информацию о фондах для каждой подкатегории
+                    funds_by_category[asset_group] = {}
+                    for sector in group_data.index.tolist():
+                        sector_funds = analyzer_data[
+                            (analyzer_data['asset_group'] == asset_group) & 
+                            (analyzer_data['detailed_sector'] == sector)
+                        ]
+                        
+                        funds_by_category[asset_group][sector] = {
+                            'funds': sector_funds[['ticker', 'name', 'annual_return', 'volatility', 'nav_billions']].to_dict('records')
+                        }
+        
         layout = {
-            'title': '🏢 Секторальный анализ ETF',
-            'xaxis': {'title': 'Категория'},
+            'title': '🏢 Анализ по типам активов (кликните для детализации)',
+            'xaxis': {'title': 'Тип активов'},
             'yaxis': {'title': 'Средняя доходность (%)'},
-            'height': 500
+            'height': 500,
+            'hovermode': 'closest'
         }
         
-        return jsonify({'data': fig_data, 'layout': layout})
+        return jsonify({
+            'data': main_chart_data, 
+            'layout': layout,
+            'detailed_data': detailed_data,
+            'funds_by_category': funds_by_category,
+            'summary': {
+                'total_funds': int(asset_stats['ticker'].sum()),
+                'total_nav': round(asset_stats['nav_billions'].sum(), 1),
+                'avg_return': round(asset_stats['annual_return'].mean(), 1)
+            }
+        })
     except Exception as e:
         print(f"Ошибка в api_sector_analysis: {e}")
         return jsonify({'error': str(e)})
@@ -2619,7 +3288,8 @@ def api_correlation_matrix():
     
     try:
         # Берем топ-15 ETF по объему
-        top_etfs = etf_data.nlargest(15, 'avg_daily_volume')
+        volume_col = 'avg_daily_volume' if 'avg_daily_volume' in etf_data.columns else 'avg_daily_value_rub'
+        top_etfs = etf_data.nlargest(15, volume_col)
         
         # Создаем синтетическую корреляционную матрицу на основе категорий и волатильности
         import numpy as np
@@ -2756,56 +3426,83 @@ def api_detailed_stats():
         return jsonify({})
     
     try:
+        # Подготавливаем данные с правильными секторами
+        analyzer_data = prepare_analyzer_data(etf_data)
+        
         # Добавляем расчетные метрики
-        if 'sharpe_ratio' not in etf_data.columns:
-            etf_data['sharpe_ratio'] = (etf_data['annual_return'] - 15) / etf_data['volatility']
+        if 'sharpe_ratio' not in analyzer_data.columns:
+            analyzer_data['sharpe_ratio'] = (analyzer_data['annual_return'] - 5) / analyzer_data['volatility'].clip(lower=0.1)
+        
+        # Определяем колонку объема
+        volume_col = 'avg_daily_volume' if 'avg_daily_volume' in analyzer_data.columns else 'avg_daily_value_rub'
+        if volume_col not in analyzer_data.columns:
+            volume_col = 'volume_rub'
+        
+        # Фильтруем валидные данные
+        valid_data = analyzer_data[
+            (analyzer_data['annual_return'].notna()) & 
+            (analyzer_data['volatility'].notna()) & 
+            (analyzer_data['sharpe_ratio'].notna())
+        ].copy()
         
         stats = {
             'overview': {
-                'total_etfs': len(etf_data),
-                'avg_return': round(etf_data['annual_return'].mean(), 2),
-                'median_return': round(etf_data['annual_return'].median(), 2),
-                'avg_volatility': round(etf_data['volatility'].mean(), 2),
-                'avg_sharpe': round(etf_data['sharpe_ratio'].mean(), 2),
-                'total_volume': int(etf_data['avg_daily_volume'].sum()),
-                'categories': len(etf_data['category'].unique())
+                'total_etfs': len(valid_data),
+                'avg_return': round(valid_data['annual_return'].mean(), 2),
+                'median_return': round(valid_data['annual_return'].median(), 2),
+                'avg_volatility': round(valid_data['volatility'].mean(), 2),
+                'avg_sharpe': round(valid_data['sharpe_ratio'].mean(), 2),
+                'total_volume': int(valid_data[volume_col].sum()) if volume_col in valid_data.columns else 0,
+                'categories': len(valid_data['sector'].unique())
             },
             'top_performers': {
                 'best_return': {
-                    'ticker': etf_data.loc[etf_data['annual_return'].idxmax(), 'ticker'],
-                    'value': round(etf_data['annual_return'].max(), 2)
+                    'ticker': valid_data.loc[valid_data['annual_return'].idxmax(), 'ticker'],
+                    'value': round(valid_data['annual_return'].max(), 2),
+                    'name': valid_data.loc[valid_data['annual_return'].idxmax(), 'full_name']
                 },
                 'best_sharpe': {
-                    'ticker': etf_data.loc[etf_data['sharpe_ratio'].idxmax(), 'ticker'],
-                    'value': round(etf_data['sharpe_ratio'].max(), 2)
+                    'ticker': valid_data.loc[valid_data['sharpe_ratio'].idxmax(), 'ticker'],
+                    'value': round(valid_data['sharpe_ratio'].max(), 2),
+                    'name': valid_data.loc[valid_data['sharpe_ratio'].idxmax(), 'full_name']
                 },
                 'lowest_volatility': {
-                    'ticker': etf_data.loc[etf_data['volatility'].idxmin(), 'ticker'],
-                    'value': round(etf_data['volatility'].min(), 2)
+                    'ticker': valid_data.loc[valid_data['volatility'].idxmin(), 'ticker'],
+                    'value': round(valid_data['volatility'].min(), 2),
+                    'name': valid_data.loc[valid_data['volatility'].idxmin(), 'full_name']
                 },
                 'highest_volume': {
-                    'ticker': etf_data.loc[etf_data['avg_daily_volume'].idxmax(), 'ticker'],
-                    'value': int(etf_data['avg_daily_volume'].max())
+                    'ticker': valid_data.loc[valid_data[volume_col].idxmax(), 'ticker'] if volume_col in valid_data.columns else 'N/A',
+                    'value': int(valid_data[volume_col].max()) if volume_col in valid_data.columns else 0,
+                    'name': valid_data.loc[valid_data[volume_col].idxmax(), 'full_name'] if volume_col in valid_data.columns else 'N/A'
                 }
             },
             'distribution': {
                 'return_ranges': {
-                    'negative': len(etf_data[etf_data['annual_return'] < 0]),
-                    'low_0_10': len(etf_data[(etf_data['annual_return'] >= 0) & (etf_data['annual_return'] < 10)]),
-                    'medium_10_20': len(etf_data[(etf_data['annual_return'] >= 10) & (etf_data['annual_return'] < 20)]),
-                    'high_20_plus': len(etf_data[etf_data['annual_return'] >= 20])
+                    'negative': len(valid_data[valid_data['annual_return'] < 0]),
+                    'low_0_10': len(valid_data[(valid_data['annual_return'] >= 0) & (valid_data['annual_return'] < 10)]),
+                    'medium_10_20': len(valid_data[(valid_data['annual_return'] >= 10) & (valid_data['annual_return'] < 20)]),
+                    'high_20_plus': len(valid_data[valid_data['annual_return'] >= 20])
                 },
                 'volatility_ranges': {
-                    'low_0_10': len(etf_data[etf_data['volatility'] < 10]),
-                    'medium_10_20': len(etf_data[(etf_data['volatility'] >= 10) & (etf_data['volatility'] < 20)]),
-                    'high_20_plus': len(etf_data[etf_data['volatility'] >= 20])
+                    'low_0_10': len(valid_data[valid_data['volatility'] < 10]),
+                    'medium_10_20': len(valid_data[(valid_data['volatility'] >= 10) & (valid_data['volatility'] < 20)]),
+                    'high_20_plus': len(valid_data[valid_data['volatility'] >= 20])
                 }
             },
-            'sector_breakdown': etf_data['category'].value_counts().to_dict()
+            'sector_breakdown': valid_data['sector'].apply(lambda x: x.split('(')[0].strip()).value_counts().to_dict(),
+            'risk_return_analysis': {
+                'conservative_funds': len(valid_data[valid_data['volatility'] < 10]),
+                'moderate_funds': len(valid_data[(valid_data['volatility'] >= 10) & (valid_data['volatility'] < 20)]),
+                'aggressive_funds': len(valid_data[valid_data['volatility'] >= 20]),
+                'high_return_funds': len(valid_data[valid_data['annual_return'] > 15]),
+                'positive_sharpe': len(valid_data[valid_data['sharpe_ratio'] > 0])
+            }
         }
         
         return jsonify(stats)
     except Exception as e:
+        print(f"Ошибка в api_detailed_stats: {e}")
         return jsonify({'error': str(e)})
 
 @app.route('/api/capital-flows')
@@ -2815,7 +3512,7 @@ def api_capital_flows():
         return jsonify({'error': 'Данные не загружены'})
     
     try:
-        analyzer = CapitalFlowAnalyzer(etf_data.copy())
+        analyzer = CapitalFlowAnalyzer(prepare_analyzer_data(etf_data), historical_manager)
         sector_flows = analyzer.calculate_sector_flows()
         
         # Создаем график потоков капитала
@@ -2852,7 +3549,7 @@ def api_market_sentiment():
         return jsonify({'error': 'Данные не загружены'})
     
     try:
-        analyzer = CapitalFlowAnalyzer(etf_data.copy())
+        analyzer = CapitalFlowAnalyzer(prepare_analyzer_data(etf_data), historical_manager)
         sentiment = analyzer.detect_risk_sentiment()
         
         # Создаем gauge chart для настроений
@@ -2894,7 +3591,7 @@ def api_sector_momentum():
         return jsonify({'error': 'Данные не загружены'})
     
     try:
-        analyzer = CapitalFlowAnalyzer(etf_data.copy())
+        analyzer = CapitalFlowAnalyzer(prepare_analyzer_data(etf_data), historical_manager)
         momentum = analyzer.analyze_sector_momentum()
         
         # Создаем scatter plot моментума
@@ -2940,7 +3637,7 @@ def api_flow_insights():
         return jsonify({'error': 'Данные не загружены'})
     
     try:
-        analyzer = CapitalFlowAnalyzer(etf_data.copy())
+        analyzer = CapitalFlowAnalyzer(prepare_analyzer_data(etf_data), historical_manager)
         insights = analyzer.generate_flow_insights()
         anomalies = analyzer.detect_flow_anomalies()
         
@@ -2959,7 +3656,9 @@ def api_fund_flows():
         return jsonify({'error': 'Данные не загружены'})
     
     try:
-        analyzer = CapitalFlowAnalyzer(etf_data.copy())
+        # Подготавливаем данные для анализатора
+        analyzer_data = prepare_analyzer_data(etf_data)
+        analyzer = CapitalFlowAnalyzer(analyzer_data, historical_manager)
         fund_flows = analyzer.analyze_fund_flows()
         
         # Берем топ-20 фондов по объему
@@ -3005,7 +3704,7 @@ def api_sector_rotation():
         return jsonify({'error': 'Данные не загружены'})
     
     try:
-        analyzer = CapitalFlowAnalyzer(etf_data.copy())
+        analyzer = CapitalFlowAnalyzer(prepare_analyzer_data(etf_data), historical_manager)
         rotation = analyzer.detect_sector_rotation()
         
         # Создаем waterfall chart для ротации
@@ -3056,7 +3755,7 @@ def api_detailed_compositions():
         return jsonify({'error': 'Данные не загружены'})
     
     try:
-        analyzer = CapitalFlowAnalyzer(etf_data.copy())
+        analyzer = CapitalFlowAnalyzer(prepare_analyzer_data(etf_data), historical_manager)
         composition_analysis = analyzer.analyze_composition_flows()
         detailed_funds = analyzer.get_detailed_fund_info()
         

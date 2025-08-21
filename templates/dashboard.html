@@ -273,6 +273,28 @@
             overflow: hidden;
         }
         
+        /* Стиль для select периода доходности */
+        #return-period {
+            background: rgba(255,255,255,0.9);
+            border: 1px solid rgba(0,0,0,0.1);
+            border-radius: 6px;
+            color: #495057;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        #return-period:hover {
+            background: rgba(255,255,255,1);
+            border-color: rgba(0,123,255,0.5);
+        }
+        
+        #return-period:focus {
+            background: rgba(255,255,255,1);
+            border-color: rgba(0,123,255,0.8);
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(0,123,255,0.2);
+        }
+
         /* Адаптивность */
         @media (max-width: 768px) {
             .stat-number {
@@ -285,6 +307,11 @@
             
             .section-title {
                 font-size: 1.3rem;
+            }
+            
+            #return-period {
+                width: 60px !important;
+                font-size: 0.65rem !important;
             }
         }
     </style>
@@ -527,8 +554,18 @@
                                     <th onclick="sortTable(2)" style="cursor: pointer;">
                                         Категория <i class="fas fa-sort ms-1"></i>
                                     </th>
-                                    <th onclick="sortTable(3)" style="cursor: pointer;">
-                                        Доходность <i class="fas fa-sort ms-1"></i>
+                                    <th onclick="sortTable(3)" style="cursor: pointer; position: relative;">
+                                        Доходность 
+                                        <select id="return-period" class="form-select form-select-sm d-inline-block ms-2" 
+                                                style="width: 80px; font-size: 0.75rem;" onchange="updateReturnPeriod()">
+                                            <option value="annual_return">1г</option>
+                                            <option value="return_1m">1м</option>
+                                            <option value="return_3m">3м</option>
+                                            <option value="return_6m">6м</option>
+                                            <option value="return_36m">3г</option>
+                                            <option value="return_60m">5л</option>
+                                        </select>
+                                        <i class="fas fa-sort ms-1"></i>
                                     </th>
                                     <th onclick="sortTable(4)" style="cursor: pointer;">
                                         Волатильность <i class="fas fa-sort ms-1"></i>
@@ -576,6 +613,7 @@
         let etfData = [];
         let currentTableSize = 50;
         let sortDirection = {};
+        let currentReturnPeriod = 'annual_return'; // Текущий период доходности
 
         // Обновление времени
         function updateTime() {
@@ -585,6 +623,28 @@
         
         updateTime();
         setInterval(updateTime, 1000);
+
+        // Функция обновления периода доходности
+        function updateReturnPeriod() {
+            const periodSelect = document.getElementById('return-period');
+            currentReturnPeriod = periodSelect.value;
+            
+            // Перерисовываем таблицу с новым периодом доходности
+            if (etfData && etfData.length > 0) {
+                renderETFTableWithPeriod(etfData, currentReturnPeriod);
+                
+                const periodNames = {
+                    'annual_return': '1 год',
+                    'return_1m': '1 месяц',
+                    'return_3m': '3 месяца', 
+                    'return_6m': '6 месяцев',
+                    'return_36m': '3 года',
+                    'return_60m': '5 лет'
+                };
+                
+                showNotification(`Переключен период доходности: ${periodNames[currentReturnPeriod]}`, 'info');
+            }
+        }
 
         // Функция обновления дашборда
         function refreshDashboard() {
@@ -1017,6 +1077,84 @@
             }
         }
 
+        // Функция рендеринга таблицы ETF с выбранным периодом доходности
+        function renderETFTableWithPeriod(data, returnPeriod = 'annual_return') {
+            const tbody = document.querySelector('#etf-table tbody');
+            tbody.innerHTML = '';
+            
+            // Заполняем таблицу
+            data.forEach((etf, index) => {
+                const returnValue = etf[returnPeriod] !== undefined ? etf[returnPeriod] : 0;
+                const returnClass = returnValue > 15 ? 'positive' : 
+                                   returnValue < 0 ? 'negative' : '';
+                const sharpeClass = etf.sharpe_ratio > 1 ? 'positive' : 
+                                   etf.sharpe_ratio < 0 ? 'negative' : '';
+                
+                // Определяем цвет бейджа категории
+                const badgeColors = {
+                    'Акции': 'primary',
+                    'Облигации': 'success', 
+                    'Золото': 'warning',
+                    'Валюта': 'info',
+                    'Недвижимость': 'secondary',
+                    'Смешанный': 'dark'
+                };
+                const badgeColor = badgeColors[etf.category] || 'secondary';
+                
+                const row = document.createElement('tr');
+                row.className = 'animate__animated animate__fadeInUp';
+                row.style.animationDelay = `${index * 0.02}s`;
+                
+                row.innerHTML = `
+                    <td>
+                        <strong class="text-primary">${etf.ticker}</strong>
+                        <br><small class="text-muted">${etf.isin || ''}</small>
+                    </td>
+                    <td>
+                        <div class="fw-bold">${etf.short_name || etf.name || 'N/A'}</div>
+                        <small class="text-muted">${(etf.short_name && etf.name && etf.short_name !== etf.name) ? etf.name : ''}</small>
+                    </td>
+                    <td>
+                        <span class="badge bg-${badgeColor}">${etf.category}</span>
+                    </td>
+                    <td class="${returnClass}">
+                        <strong>${returnValue === 0 ? 'Н/Д' : `${returnValue.toFixed(1)}%`}</strong>
+                        <br><small class="text-muted">${getPeriodLabel(returnPeriod)}</small>
+                    </td>
+                    <td>
+                        <span class="fw-bold">${etf.volatility.toFixed(1)}%</span>
+                        <br><small class="text-muted">волат.</small>
+                    </td>
+                    <td class="${sharpeClass}">
+                        <strong>${etf.sharpe_ratio.toFixed(2)}</strong>
+                        <br><small class="text-muted">Sharpe</small>
+                    </td>
+                    <td>
+                        <div class="fw-bold">${etf.avg_daily_volume.toLocaleString('ru-RU')}</div>
+                        <small class="text-muted">шт/день</small>
+                    </td>
+                    <td>
+                        <small class="text-muted">${etf.management_company || 'N/A'}</small>
+                    </td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+
+        // Функция получения подписи для периода
+        function getPeriodLabel(period) {
+            const labels = {
+                'annual_return': 'год',
+                'return_1m': '1м',
+                'return_3m': '3м',
+                'return_6m': '6м',
+                'return_36m': '3г',
+                'return_60m': '5л'
+            };
+            return labels[period] || 'год';
+        }
+
         // Загрузка таблицы ETF
         async function loadETFTable() {
             try {
@@ -1034,63 +1172,8 @@
                     categoryFilter.innerHTML += `<option value="${category}">${category}</option>`;
                 });
                 
-                // Заполняем таблицу
-                etfData.forEach((etf, index) => {
-                    const returnClass = etf.annual_return > 15 ? 'positive' : 
-                                       etf.annual_return < 0 ? 'negative' : '';
-                    const sharpeClass = etf.sharpe_ratio > 1 ? 'positive' : 
-                                       etf.sharpe_ratio < 0 ? 'negative' : '';
-                    
-                    // Определяем цвет бейджа категории
-                    const badgeColors = {
-                        'Акции': 'primary',
-                        'Облигации': 'success', 
-                        'Золото': 'warning',
-                        'Валюта': 'info',
-                        'Недвижимость': 'secondary',
-                        'Смешанный': 'dark'
-                    };
-                    const badgeColor = badgeColors[etf.category] || 'secondary';
-                    
-                    const row = document.createElement('tr');
-                    row.className = 'animate__animated animate__fadeInUp';
-                    row.style.animationDelay = `${index * 0.02}s`;
-                    
-                    row.innerHTML = `
-                        <td>
-                            <strong class="text-primary">${etf.ticker}</strong>
-                            <br><small class="text-muted">${etf.isin || ''}</small>
-                        </td>
-                        <td>
-                            <div class="fw-bold">${etf.short_name || etf.name || 'N/A'}</div>
-                            <small class="text-muted">${(etf.short_name && etf.name && etf.short_name !== etf.name) ? etf.name : ''}</small>
-                        </td>
-                        <td>
-                            <span class="badge bg-${badgeColor}">${etf.category}</span>
-                        </td>
-                        <td class="${returnClass}">
-                            <strong>${etf.annual_return.toFixed(1)}%</strong>
-                            <br><small class="text-muted">год</small>
-                        </td>
-                        <td>
-                            <span class="fw-bold">${etf.volatility.toFixed(1)}%</span>
-                            <br><small class="text-muted">волат.</small>
-                        </td>
-                        <td class="${sharpeClass}">
-                            <strong>${etf.sharpe_ratio.toFixed(2)}</strong>
-                            <br><small class="text-muted">Sharpe</small>
-                        </td>
-                        <td>
-                            <div class="fw-bold">${etf.avg_daily_volume.toLocaleString('ru-RU')}</div>
-                            <small class="text-muted">шт/день</small>
-                        </td>
-                        <td>
-                            <small class="text-muted">${etf.management_company || 'N/A'}</small>
-                        </td>
-                    `;
-                    
-                    tbody.appendChild(row);
-                });
+                // Рендерим таблицу с текущим периодом доходности
+                renderETFTableWithPeriod(etfData, currentReturnPeriod);
                 
                 // Обновляем информацию о таблице
                 document.getElementById('table-info').textContent = 
