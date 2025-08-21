@@ -8,17 +8,23 @@ git clone https://github.com/squazaryu/market-analysis.git
 cd market-analysis
 ```
 
-### 2. Установите зависимости
+### 2. Создайте виртуальное окружение (macOS/Linux)
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 3. Установите зависимости
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Запустите дашборд
+### 4. Запустите дашборд
 ```bash
 python3 simple_dashboard.py
 ```
 
-### 4. Откройте в браузере
+### 5. Откройте в браузере
 ```
 http://localhost:5004
 ```
@@ -31,6 +37,8 @@ http://localhost:5004
 
 ### ✅ Решение 1: Обновите данные
 ```bash
+# Активируйте виртуальное окружение если используете
+source venv/bin/activate
 python3 refresh_all_data.py
 ```
 
@@ -42,6 +50,8 @@ python3 refresh_all_data.py
 ### ✅ Решение 3: Принудительно скачайте
 ```bash
 git pull --force
+# Активируйте виртуальное окружение если используете
+source venv/bin/activate
 python3 refresh_all_data.py
 ```
 
@@ -54,6 +64,27 @@ python3 refresh_all_data.py
 - **Переключатель** "По доходности" / "По СЧА"
 - **Интерактивные графики** с возможностью клика
 - **Навигация** между уровнями анализа
+
+---
+
+---
+
+## ⚠️ Устранение ошибки "externally-managed-environment" (macOS)
+
+Если видите ошибку при установке зависимостей:
+
+### ✅ Решение: Используйте виртуальное окружение
+```bash
+# В папке проекта
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### ⚠️ Альтернативное решение (НЕ рекомендуется)
+```bash
+pip install -r requirements.txt --break-system-packages
+```
 
 ---
 
