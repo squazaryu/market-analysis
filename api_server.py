@@ -5,7 +5,6 @@
 """
 
 from flask import Flask, jsonify, request
-from flask_cors import CORS
 import pandas as pd
 import numpy as np
 import json
@@ -13,7 +12,14 @@ from datetime import datetime
 from pathlib import Path
 
 app = Flask(__name__)
-CORS(app)  # Разрешаем запросы с других доменов
+
+# Добавляем CORS заголовки вручную
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
 
 # Функция для конвертации numpy/pandas типов в JSON-совместимые
 def convert_to_json_serializable(obj):

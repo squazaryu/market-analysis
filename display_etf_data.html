@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анализ российских БПИФ с выпадающими периодами доходности</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        .return-header {
+            white-space: nowrap;
+        }
+        .return-select {
+            margin-left: 5px;
+            width: 100px;
+            display: inline-block;
+        }
+        .fund-link {
+            text-decoration: none;
+        }
+        .fund-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid p-4">
+        <header class="mb-4">
+            <h1><i class="fas fa-chart-line me-2 text-primary"></i>Анализ российских БПИФ</h1>
+            <p class="text-muted">Комплексная аналитика биржевых паевых инвестиционных фондов</p>
+        </header>
+
+        <!-- Статистика -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body text-center">
+                        <h3 id="total-funds">-</h3>
+                        <p class="mb-0">Всего фондов</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body text-center">
+                        <h3 id="total-nav">-</h3>
+                        <p class="mb-0">Млрд ₽ СЧА</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body text-center">
+                        <h3 id="avg-return">-</h3>
+                        <p class="mb-0">Средняя доходность</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-secondary text-white">
+                    <div class="card-body text-center">
+                        <h3 id="data-date">-</h3>
+                        <p class="mb-0">Дата данных</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Управление -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <input type="file" id="csv-file-input" accept=".csv" class="form-control" style="display: none;">
+                        <button class="btn btn-primary me-2" onclick="document.getElementById('csv-file-input').click()">
+                            <i class="fas fa-upload me-1"></i>Загрузить CSV
+                        </button>
+                        <button class="btn btn-success me-2" onclick="loadDefaultData()">
+                            <i class="fas fa-database me-1"></i>Загрузить данные по умолчанию
+                        </button>
+                        <span class="text-muted ms-3" id="file-info">Файл не выбран</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Таблица фондов -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-table me-2"></i>Топ БПИФ фонды</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped" id="funds-table">
+                                <thead>
+                                    <tr>
+                                        <th>Тикер</th>
+                                        <th style="min-width: 200px;">Название</th>
+                                        <th>СЧА<br>(млрд ₽)</th>
+                                        <th>Цена пая<br>(₽)</th>
+                                        <th class="return-header">
+                                            Доходность
+                                            <select id="return-period" class="form-select form-select-sm return-select" onchange="updateReturnPeriod()">
+                                                <option value="annual_return">1 год</option>
+                                                <option value="return_1m">1 месяц</option>
+                                                <option value="return_3m">3 месяца</option>
+                                                <option value="return_6m">6 месяцев</option>
+                                                <option value="return_36m">3 года</option>
+                                                <option value="return_60m">5 лет</option>
+                                            </select>
+                                        </th>
+                                        <th>Комиссия<br>УК (%)</th>
+                                        <th>Общие<br>расходы (%)</th>
+                                        <th>Ссылка</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="funds-tbody">
+                                    <tr>
+                                        <td colspan="8" class="text-center py-4">
+                                            <i class="fas fa-info-circle me-2"></i>Загрузите CSV файл для отображения данных
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentData = [];
+
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            const headers = lines[0].split(',');
+            const data = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',');
+                const obj = {};
+                
+                headers.forEach((header, index) => {
+                    let value = values[index] || '';
+                    
+                    // Очистка данных от кавычек и лишних символов
+                    value = value.replace(/^["']|["']$/g, '');
+                    
+                    // Преобразование числовых полей
+                    const numericFields = [
+                        'annual_return', 'volatility', 'sharpe_ratio', 'current_price', 
+                        'avg_daily_value_rub', 'mgmt_fee', 'total_fee', 'nav_billions',
+                        'return_1m', 'return_3m', 'return_6m', 'return_12m', 'return_36m', 'return_60m',
+                        'bid_price', 'ask_price', 'volume_rub', 'management_fee', 'depositary_fee', 
+                        'other_expenses', 'total_expenses'
+                    ];
+                    
+                    if (numericFields.includes(header)) {
+                        obj[header] = parseFloat(value) || 0;
+                    } else {
+                        obj[header] = value;
+                    }
+                });
+                
+                data.push(obj);
+            }
+
+            return data;
+        }
+
+        function updateStats(data) {
+            const totalFunds = data.length;
+            const totalNav = data.reduce((sum, fund) => sum + fund.nav_billions, 0);
+            const validReturns = data.filter(fund => fund.annual_return > -100);
+            const avgReturn = validReturns.length > 0 
+                ? validReturns.reduce((sum, fund) => sum + fund.annual_return, 0) / validReturns.length 
+                : 0;
+
+            document.getElementById('total-funds').textContent = totalFunds;
+            document.getElementById('total-nav').textContent = totalNav.toFixed(0);
+            document.getElementById('avg-return').textContent = `${avgReturn.toFixed(1)}%`;
+            document.getElementById('data-date').textContent = new Date().toLocaleDateString('ru-RU');
+        }
+
+        function renderTable(data, returnPeriod = 'annual_return') {
+            const tbody = document.getElementById('funds-tbody');
+            tbody.innerHTML = '';
+
+            // Сортировка по выбранному периоду доходности (по убыванию)
+            const sortedData = [...data].sort((a, b) => (b[returnPeriod] || 0) - (a[returnPeriod] || 0));
+
+            sortedData.forEach(fund => {
+                const returnValue = fund[returnPeriod] !== undefined ? fund[returnPeriod] : 0;
+                
+                let returnBadgeClass = 'secondary';
+                if (returnValue > 20) returnBadgeClass = 'success';
+                else if (returnValue > 10) returnBadgeClass = 'info';
+                else if (returnValue > 0) returnBadgeClass = 'warning';
+                else if (returnValue < 0) returnBadgeClass = 'danger';
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><strong>${fund.ticker || '-'}</strong></td>
+                    <td>${fund.name || '-'}</td>
+                    <td>${fund.nav_billions ? fund.nav_billions.toFixed(1) : '-'}</td>
+                    <td>${fund.current_price ? fund.current_price.toFixed(2) : '-'}</td>
+                    <td>
+                        <span class="badge bg-${returnBadgeClass}">
+                            ${returnValue === 0 ? 'Н/Д' : `${returnValue.toFixed(1)}%`}
+                        </span>
+                    </td>
+                    <td>${fund.mgmt_fee ? fund.mgmt_fee.toFixed(2) : '-'}</td>
+                    <td>${fund.total_expenses ? fund.total_expenses.toFixed(2) : '-'}</td>
+                    <td>
+                        ${fund.investfunds_url ? 
+                            `<a href="${fund.investfunds_url}" target="_blank" class="btn btn-sm btn-outline-primary fund-link">
+                                <i class="fas fa-external-link-alt"></i>
+                            </a>` : '-'}
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateReturnPeriod() {
+            const selectedPeriod = document.getElementById('return-period').value;
+            renderTable(currentData, selectedPeriod);
+        }
+
+        function loadData(data) {
+            currentData = data;
+            updateStats(data);
+            const selectedPeriod = document.getElementById('return-period').value;
+            renderTable(data, selectedPeriod);
+        }
+
+        async function loadDefaultData() {
+            try {
+                const response = await fetch('./enhanced_etf_data_20250821_102231.csv');
+                const csvText = await response.text();
+                const data = parseCSV(csvText);
+                
+                loadData(data);
+                document.getElementById('file-info').textContent = 'Загружен файл по умолчанию: enhanced_etf_data_20250821_102231.csv';
+                
+            } catch (error) {
+                console.error('Ошибка загрузки файла по умолчанию:', error);
+                document.getElementById('file-info').textContent = 'Ошибка загрузки файла по умолчанию';
+            }
+        }
+
+        // Обработка загрузки файла
+        document.getElementById('csv-file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const data = parseCSV(e.target.result);
+                        loadData(data);
+                        document.getElementById('file-info').textContent = `Загружен: ${file.name}`;
+                    } catch (error) {
+                        console.error('Ошибка обработки CSV:', error);
+                        document.getElementById('file-info').textContent = 'Ошибка обработки CSV файла';
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        // Автоматическая загрузка данных по умолчанию при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(loadDefaultData, 500);
+        });
+    </script>
+</body>
+</html>
