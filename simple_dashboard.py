@@ -1046,7 +1046,7 @@ HTML_TEMPLATE = """
                 yaxis: {title: yTitle},
                 height: 650,
                 margin: {b: 140, l: 60, r: 30, t: 80},
-                width: null, // Автоматическая ширина для заполнения контейнера
+                width: null,
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 paper_bgcolor: 'rgba(0,0,0,0)'
             };
