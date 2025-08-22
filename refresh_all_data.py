@@ -72,7 +72,11 @@ def create_fresh_data():
                 
                 if fund_data:
                     # Рассчитываем адаптивную доходность (за максимально доступный период)
-                    annual_return = calculate_adaptive_return(parser, ticker, fund_data)
+                    return_result = calculate_adaptive_return(parser, ticker, fund_data)
+                    if isinstance(return_result, tuple):
+                        annual_return, return_period = return_result
+                    else:
+                        annual_return, return_period = return_result, 'н/д'
                     
                     # Также сохраняем исходную доходность за 1 год, если есть
                     original_annual = fund_data.get('annual_return', 0)
@@ -85,6 +89,7 @@ def create_fresh_data():
                         'ticker': ticker,
                         'name': fund_data.get('name', f'БПИФ {ticker}'),
                         'annual_return': round(annual_return, 2),
+                        'return_period': return_period,  # Период расчета доходности
                         'original_annual_return': round(original_annual, 2),  # Оригинальная годовая если есть
                         'volatility': round(volatility, 2),
                         'sharpe_ratio': round(sharpe_ratio, 3),
@@ -203,7 +208,9 @@ def calculate_volatility(annual_return, fund_name="", ticker=""):
     return max(min_vol, min(max_vol, calculated_vol))
 
 def calculate_adaptive_return(parser, ticker, nav_data):
-    """Рассчитывает доходность за максимально доступный период"""
+    """Рассчитывает доходность за максимально доступный период
+    Возвращает кортеж: (доходность, период)
+    """
     try:
         # Для начала проверяем простые данные из nav_data
         if nav_data:
@@ -212,7 +219,7 @@ def calculate_adaptive_return(parser, ticker, nav_data):
                 if return_field in nav_data and nav_data[return_field] is not None:
                     value = float(nav_data[return_field])
                     if value != 0:
-                        return round(value, 2)
+                        return (round(value, 2), '1г')
         
         # Пытаемся получить исторические данные от InvestFunds (но это сложнее)
         # Пока пропустим этот блок и перейдем к fallback
@@ -248,37 +255,34 @@ def calculate_adaptive_return(parser, ticker, nav_data):
                     print(f"   📊 {ticker}: аннуализировано за {days_diff} дней ({total_return:.1f}% → {annualized_return:.1f}%)")
                     return round(annualized_return, 2)
         
-        # Fallback: пытаемся аннуализировать из коротких периодов
+        # Fallback: используем фактическую доходность за доступный период (без аннуализации)
         if nav_data:            
-            # Пытаемся рассчитать из shorter period returns
+            # Проверяем короткие периоды в порядке убывания
             if 'return_6m' in nav_data and nav_data['return_6m'] is not None:
                 semi_annual = float(nav_data['return_6m'])
                 if semi_annual != 0:
-                    annualized = semi_annual * 2
-                    print(f"   📊 {ticker}: аннуализировано из 6м ({semi_annual:.1f}% → {annualized:.1f}%)")
-                    return round(annualized, 2)
+                    print(f"   📊 {ticker}: фактическая доходность за 6 месяцев: {semi_annual:.1f}%")
+                    return (round(semi_annual, 2), '6м')
                     
             if 'return_3m' in nav_data and nav_data['return_3m'] is not None:
                 quarterly = float(nav_data['return_3m'])
                 if quarterly != 0:
-                    annualized = quarterly * 4
-                    print(f"   📊 {ticker}: аннуализировано из 3м ({quarterly:.1f}% → {annualized:.1f}%)")
-                    return round(annualized, 2)
+                    print(f"   📊 {ticker}: фактическая доходность за 3 месяца: {quarterly:.1f}%")
+                    return (round(quarterly, 2), '3м')
                 
             if 'return_1m' in nav_data and nav_data['return_1m'] is not None:
                 monthly = float(nav_data['return_1m'])
                 if monthly != 0:
-                    annualized = monthly * 12
-                    print(f"   📊 {ticker}: аннуализировано из 1м ({monthly:.1f}% → {annualized:.1f}%)")
-                    return round(annualized, 2)
+                    print(f"   📊 {ticker}: фактическая доходность за 1 месяц: {monthly:.1f}%")
+                    return (round(monthly, 2), '1м')
         
         # Последний fallback - 0%
         print(f"   ⚠️  {ticker}: данных о доходности не найдено, используется 0%")
-        return 0.0
+        return (0.0, 'н/д')
         
     except Exception as e:
         print(f"   ❌ Ошибка расчета доходности для {ticker}: {e}")
-        return 0.0
+        return (0.0, 'ошибка')
 
 def calculate_sharpe(annual_return, volatility):
     """Рассчитывает коэффициент Шарпа"""
