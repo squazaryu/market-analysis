@@ -992,10 +992,15 @@ HTML_TEMPLATE = """
                                    nav > 10 ? '#2ca02c' : '#d62728';
                         })
                 },
-                customdata: detailData.counts,
-                hovertemplate: '<b>%{x}</b><br>' +
+                customdata: detailData.sectors.map(function(fullName, index) {
+                    return {
+                        fullName: fullName,
+                        count: detailData.counts[index]
+                    };
+                }),
+                hovertemplate: '<b>%{customdata.fullName}</b><br>' +
                              (currentView === 'returns' ? 'Доходность: %{y:.1f}%<br>' : 'СЧА: %{y:.1f} млрд ₽<br>') +
-                             'Фондов: %{customdata}<br>' +
+                             'Фондов: %{customdata.count}<br>' +
                              '<i>Кликните для просмотра фондов</i><br>' +
                              '<extra></extra>',
                 hoverlabel: {
@@ -1013,16 +1018,21 @@ HTML_TEMPLATE = """
                     tickmode: 'array',
                     tickvals: detailData.sectors,
                     ticktext: detailData.sectors.map(function(sector) {
-                        // Умное сокращение названий
+                        // Убираем повторяющиеся названия типов активов и оставляем только подкатегории
                         let shortName = sector;
                         
-                        // НЕ удаляем скобки для акций - они содержат важную информацию
-                        // Только сокращаем содержимое в скобках для экономии места
-                        if (shortName.indexOf('(') !== -1) {
-                            shortName = shortName
+                        // Извлекаем содержимое из скобок для краткого отображения
+                        if (shortName.indexOf('(') !== -1 && shortName.indexOf(')') !== -1) {
+                            let contentInBrackets = shortName.substring(
+                                shortName.indexOf('(') + 1, 
+                                shortName.indexOf(')')
+                            );
+                            
+                            // Сокращаем длинные названия
+                            contentInBrackets = contentInBrackets
                                 .replace('ESG/Устойчивое развитие', 'ESG')
                                 .replace('Ответственные инвестиции', 'Ответств.')
-                                .replace('Российские акции', 'РФ')
+                                .replace('Российские акции', 'РФ акции')
                                 .replace('Голубые фишки', 'Голубые')
                                 .replace('Широкий рынок', 'Широкий')
                                 .replace('Технологии', 'IT')
@@ -1042,7 +1052,11 @@ HTML_TEMPLATE = """
                                 .replace('Накопительный', 'Накопит.')
                                 .replace('Сберегательный', 'Сберегат.')
                                 .replace('Ликвидность', 'Ликвид.')
-                                .replace('Расширенные корзины', 'Расшир.');
+                                .replace('Расширенные корзины', 'Расшир.')
+                                .replace('В валюте', 'Валютн.');
+                            
+                            // Возвращаем только содержимое скобок
+                            shortName = contentInBrackets;
                         }
                         
                         // Сокращаем ключевые слова
