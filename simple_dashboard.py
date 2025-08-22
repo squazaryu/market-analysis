@@ -1033,7 +1033,7 @@ HTML_TEMPLATE = """
                                     secondLine = secondLine.substring(0, 17) + '...';
                                 }
                                 
-                                return firstLine + '\n' + secondLine;
+                                return firstLine + '\\n' + secondLine;
                             }
                         }
                         
