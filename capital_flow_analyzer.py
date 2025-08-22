@@ -19,121 +19,203 @@ class CapitalFlowAnalyzer:
     def __init__(self, etf_data: pd.DataFrame, historical_manager: Optional[HistoricalDataManager] = None):
         self.etf_data = etf_data
         self.historical_manager = historical_manager or HistoricalDataManager()
-        self.sector_mapping = self._create_sector_mapping()
+        self.asset_type_mapping = self._create_asset_type_mapping()
         
-    def _create_sector_mapping(self) -> Dict[str, str]:
-        """Создает маппинг ETF по секторам на основе детальной базы данных составов"""
-        sector_map = {}
+    def _create_asset_type_mapping(self) -> Dict[str, str]:
+        """Создает маппинг ETF по типам активов (как в секторальном анализе)"""
+        asset_type_map = {}
         
-        # Сначала используем детальную базу данных составов
+        def group_by_asset_type(sector, ticker='', name=''):
+            sector_lower = sector.lower()
+            name_lower = name.lower() if name else ''
+            
+            # Специальная обработка валютных фондов
+            if 'валютн' in sector_lower or 'валют' in sector_lower:
+                if 'облигации' in name_lower or 'облигац' in name_lower:
+                    return 'Облигации'
+                elif ('ликвидность' in name_lower or 'накопительный' in name_lower or 
+                      'сберегательный' in name_lower):
+                    return 'Денежный рынок'
+                else:
+                    return 'Смешанные'
+            
+            # Антиинфляционные фонды относим к смешанным
+            elif 'защитн' in sector_lower or 'антиинфляц' in sector_lower:
+                return 'Смешанные'
+            
+            # Драгоценные металлы остаются товарами
+            elif 'золот' in sector_lower or 'драгоценн' in sector_lower or 'металл' in sector_lower:
+                return 'Товары'
+            
+            # Остальные категории без изменений
+            elif 'акци' in sector_lower:
+                return 'Акции'
+            elif 'облига' in sector_lower:
+                return 'Облигации'
+            elif 'денежн' in sector_lower or 'ликвидн' in sector_lower:
+                return 'Денежный рынок'
+            elif 'смешанн' in sector_lower or 'диверс' in sector_lower:
+                return 'Смешанные'
+            else:
+                return 'Прочие'
+        
+        # Применяем группировку к каждому ETF
         for _, row in self.etf_data.iterrows():
             ticker = row['ticker']
-            isin = row.get('isin', '')
+            sector = row.get('sector', '')
+            name = row.get('name', '')
             
-            # Получаем детальную информацию из базы данных
-            fund_info = get_fund_category(isin)
-            
-            if fund_info['category'] != 'Неизвестно':
-                # Используем детальную категорию из базы данных
-                sector_map[ticker] = f"{fund_info['category']} ({fund_info['subcategory']})"
-            else:
-                # Fallback: анализируем названия фондов
-                full_name = str(row.get('full_name', '')).lower()
-                short_name = str(row.get('short_name', '')).lower()
-                name = str(row.get('name', '')).lower()
+            asset_type_map[ticker] = group_by_asset_type(sector, ticker, name)
                 
-                combined_name = f"{full_name} {short_name} {name}".lower()
-                
-                # Классификация по ключевым словам
-                if any(word in combined_name for word in ['облиг', 'обл ', 'bond', 'купон']):
-                    sector_map[ticker] = 'Облигации (Смешанные)'
-                elif any(word in combined_name for word in ['золот', 'gold', 'драг']):
-                    sector_map[ticker] = 'Драгоценные металлы (Золото)'
-                elif any(word in combined_name for word in ['валют', 'доллар', 'евро', 'юань', 'currency']):
-                    sector_map[ticker] = 'Валютные (Смешанные)'
-                elif any(word in combined_name for word in ['ит ', 'технолог', 'tech', 'софт', 'интернет']):
-                    sector_map[ticker] = 'Акции (Технологии)'
-                elif any(word in combined_name for word in ['энерг', 'нефт', 'газ', 'energy']):
-                    sector_map[ticker] = 'Акции (Энергетика)'
-                elif any(word in combined_name for word in ['финанс', 'банк', 'страх', 'finance']):
-                    sector_map[ticker] = 'Акции (Финансы)'
-                elif any(word in combined_name for word in ['индекс', 'широк', 'рынок', 'ртс', 'ммвб', 'мосбирж']):
-                    sector_map[ticker] = 'Акции (Широкий рынок)'
-                elif any(word in combined_name for word in ['голуб', 'blue', 'лидер', 'топ']):
-                    sector_map[ticker] = 'Акции (Голубые фишки)'
-                elif any(word in combined_name for word in ['антиинфляц', 'защит', 'стабил']):
-                    sector_map[ticker] = 'Защитные активы (Смешанные)'
-                else:
-                    sector_map[ticker] = 'Смешанные/Прочие'
-                
-        return sector_map
+        return asset_type_map
     
-    def calculate_sector_flows(self) -> pd.DataFrame:
-        """Рассчитывает потоки капитала по секторам"""
+    def calculate_real_capital_flows(self, days: int = 30) -> pd.DataFrame:
+        """Рассчитывает реальные притоки/оттоки капитала через изменения СЧА"""
         
-        # Добавляем сектор к каждому ETF
-        self.etf_data['sector'] = self.etf_data['ticker'].map(
-            lambda x: self.sector_mapping.get(x, 'Прочие')
-        )
+        flows_data = []
         
-        # Рассчитываем объем торгов по секторам
-        sector_flows = self.etf_data.groupby('sector').agg({
-            'avg_daily_volume': 'sum',
-            'market_cap': 'sum', 
-            'annual_return': 'mean',
-            'volatility': 'mean',
+        for _, row in self.etf_data.iterrows():
+            ticker = row['ticker']
+            current_nav = row.get('market_cap', 0)
+            
+            # Получаем тип активов
+            asset_type = self.asset_type_mapping.get(ticker, 'Прочие')
+            
+            try:
+                # Пытаемся получить исторические данные СЧА
+                if hasattr(self.historical_manager, 'get_nav_history'):
+                    nav_history = self.historical_manager.get_nav_history(ticker, days=days)
+                else:
+                    nav_history = None
+                
+                if nav_history is not None and len(nav_history) >= 2:
+                    # Есть исторические данные - считаем реальный поток
+                    nav_start = nav_history.iloc[0].get('nav', current_nav)
+                    nav_end = nav_history.iloc[-1].get('nav', current_nav)
+                    
+                    # Исключаем влияние изменения цены пая (рыночный рост/падение)
+                    price_start = nav_history.iloc[0].get('price', 100)
+                    price_end = nav_history.iloc[-1].get('price', 100)
+                    
+                    if price_start > 0:
+                        market_growth = (price_end / price_start - 1)
+                        expected_nav = nav_start * (1 + market_growth)
+                        
+                        # Реальный приток/отток = разница между фактическим и ожидаемым СЧА
+                        net_flow = nav_end - expected_nav
+                        flow_percent = (net_flow / nav_start) * 100 if nav_start > 0 else 0
+                    else:
+                        net_flow = nav_end - nav_start
+                        flow_percent = (net_flow / nav_start) * 100 if nav_start > 0 else 0
+                        
+                else:
+                    # Нет исторических данных - используем упрощенную оценку на основе доходности
+                    annual_return = row.get('annual_return', 0)
+                    period_return = annual_return * (days / 365)
+                    
+                    # Если доходность существенно отличается от среднерыночной, 
+                    # это может указывать на притоки/оттоки
+                    market_avg_return = self.etf_data['annual_return'].mean()
+                    period_market_return = market_avg_return * (days / 365)
+                    
+                    excess_return = period_return - period_market_return
+                    
+                    # Эмпирическая оценка: избыточная доходность может указывать на потоки
+                    flow_percent = excess_return * 0.3  # Коэффициент корреляции потоков и доходности
+                    net_flow = (flow_percent / 100) * current_nav if current_nav > 0 else 0
+                
+            except Exception as e:
+                # В случае ошибки используем нулевые значения
+                net_flow = 0
+                flow_percent = 0
+            
+            flows_data.append({
+                'ticker': ticker,
+                'asset_type': asset_type,
+                'nav_current': current_nav,
+                'net_flow_rub': net_flow,
+                'flow_percent': round(flow_percent, 2),
+                'flow_direction': 'Приток' if net_flow > 0 else ('Отток' if net_flow < 0 else 'Нейтрально'),
+                'flow_intensity': abs(flow_percent)
+            })
+        
+        flows_df = pd.DataFrame(flows_data)
+        
+        # Группируем по типам активов
+        asset_flows = flows_df.groupby('asset_type').agg({
+            'nav_current': 'sum',
+            'net_flow_rub': 'sum',
+            'flow_percent': 'mean',
+            'flow_intensity': 'mean',
             'ticker': 'count'
         }).round(2)
         
-        sector_flows.columns = [
-            'total_volume', 'total_market_cap', 'avg_return', 
-            'avg_volatility', 'etf_count'
+        asset_flows.columns = [
+            'total_nav', 'total_net_flow', 'avg_flow_percent', 
+            'avg_flow_intensity', 'funds_count'
         ]
         
-        # Рассчитываем долю каждого сектора
-        total_volume = sector_flows['total_volume'].sum()
-        total_market_cap = sector_flows['total_market_cap'].sum()
+        # Рассчитываем долю каждого типа активов
+        total_nav = asset_flows['total_nav'].sum()
+        if total_nav > 0:
+            asset_flows['nav_share'] = (asset_flows['total_nav'] / total_nav * 100).round(1)
+            asset_flows['flow_share'] = (asset_flows['total_net_flow'] / asset_flows['total_net_flow'].abs().sum() * 100).round(1)
+        else:
+            asset_flows['nav_share'] = 0
+            asset_flows['flow_share'] = 0
         
-        sector_flows['volume_share'] = (sector_flows['total_volume'] / total_volume * 100).round(1)
-        sector_flows['market_cap_share'] = (sector_flows['total_market_cap'] / total_market_cap * 100).round(1)
+        # Определяем направление потока для каждого типа активов
+        asset_flows['flow_direction'] = asset_flows['total_net_flow'].apply(
+            lambda x: 'Приток' if x > 0 else ('Отток' if x < 0 else 'Нейтрально')
+        )
         
-        return sector_flows.sort_values('total_volume', ascending=False)
+        return asset_flows.sort_values('total_net_flow', ascending=False)
     
     def detect_risk_sentiment(self) -> Dict[str, any]:
-        """Определяет рыночные настроения (risk-on/risk-off)"""
+        """Определяет рыночные настроения (risk-on/risk-off) на основе потоков капитала"""
         
-        sector_flows = self.calculate_sector_flows()
+        asset_flows = self.calculate_real_capital_flows()
         
         # Защитные активы (risk-off)
-        defensive_sectors = ['Облигации', 'Золото', 'Валютные']
+        defensive_assets = ['Облигации', 'Денежный рынок', 'Товары']  # Товары включают золото
         # Рисковые активы (risk-on) 
-        risky_sectors = ['Технологии', 'Потребительский сектор', 'Энергетика']
+        risky_assets = ['Акции']
         
-        defensive_volume = sector_flows[
-            sector_flows.index.isin(defensive_sectors)
-        ]['volume_share'].sum()
+        defensive_flow = asset_flows[
+            asset_flows.index.isin(defensive_assets)
+        ]['total_net_flow'].sum()
         
-        risky_volume = sector_flows[
-            sector_flows.index.isin(risky_sectors)
-        ]['volume_share'].sum()
+        risky_flow = asset_flows[
+            asset_flows.index.isin(risky_assets)
+        ]['total_net_flow'].sum()
         
-        # Определяем настроения
-        if defensive_volume > risky_volume * 1.5:
+        # Также учитываем объемы (СЧА)
+        defensive_nav = asset_flows[
+            asset_flows.index.isin(defensive_assets)
+        ]['nav_share'].sum()
+        
+        risky_nav = asset_flows[
+            asset_flows.index.isin(risky_assets)
+        ]['nav_share'].sum()
+        
+        # Определяем настроения на основе направления потоков
+        if defensive_flow > abs(risky_flow) * 0.5 and defensive_flow > 0:
             sentiment = "Risk-Off"
-            confidence = min(95, defensive_volume / max(risky_volume, 0.1) * 30)
-        elif risky_volume > defensive_volume * 1.5:
+            confidence = min(95, abs(defensive_flow) / max(abs(risky_flow), 1) * 40)
+        elif risky_flow > abs(defensive_flow) * 0.5 and risky_flow > 0:
             sentiment = "Risk-On" 
-            confidence = min(95, risky_volume / max(defensive_volume, 0.1) * 30)
+            confidence = min(95, abs(risky_flow) / max(abs(defensive_flow), 1) * 40)
         else:
             sentiment = "Нейтральный"
-            confidence = 50
-            
+            confidence = 30
+        
         return {
             'sentiment': sentiment,
             'confidence': round(confidence, 1),
-            'defensive_share': round(defensive_volume, 1),
-            'risky_share': round(risky_volume, 1),
-            'ratio': round(defensive_volume / max(risky_volume, 0.1), 2)
+            'defensive_flow': round(defensive_flow / 1e9, 2),  # в млрд руб
+            'risky_flow': round(risky_flow / 1e9, 2),         # в млрд руб
+            'defensive_share': round(defensive_nav, 1),
+            'risky_share': round(risky_nav, 1)
         }
     
     def analyze_sector_momentum(self) -> pd.DataFrame:

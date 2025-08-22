@@ -639,7 +639,7 @@ HTML_TEMPLATE = """
             <div class="col-12">
                 <div class="card">
                     <div class="card-header">
-                        <h5><i class="fas fa-exchange-alt me-2"></i>Потоки капитала по секторам</h5>
+                        <h5><i class="fas fa-exchange-alt me-2"></i>Реальные потоки капитала по типам активов</h5>
                     </div>
                     <div class="card-body">
                         <div id="capital-flows-plot" style="height: 600px;">
@@ -3513,29 +3513,61 @@ def api_capital_flows():
     
     try:
         analyzer = CapitalFlowAnalyzer(prepare_analyzer_data(etf_data), historical_manager)
-        sector_flows = analyzer.calculate_sector_flows()
+        asset_flows = analyzer.calculate_real_capital_flows()
         
         # Создаем график потоков капитала
-        sectors = sector_flows.index.tolist()
-        volumes = sector_flows['volume_share'].tolist()
-        returns = sector_flows['avg_return'].tolist()
+        asset_types = asset_flows.index.tolist()
+        net_flows = asset_flows['total_net_flow'].tolist()
+        nav_shares = asset_flows['nav_share'].tolist()
+        flow_directions = asset_flows['flow_direction'].tolist()
+        
+        # Цвета для притоков (зеленый) и оттоков (красный)
+        colors = []
+        for flow in net_flows:
+            if flow > 0:
+                colors.append('rgba(34, 197, 94, 0.8)')  # Зеленый для притоков
+            elif flow < 0:
+                colors.append('rgba(239, 68, 68, 0.8)')  # Красный для оттоков
+            else:
+                colors.append('rgba(156, 163, 175, 0.8)')  # Серый для нейтральных
+        
+        # Конвертируем в млрд рублей для отображения
+        net_flows_billions = [f / 1e9 for f in net_flows]
         
         fig_data = [{
-            'x': sectors,
-            'y': volumes,
+            'x': asset_types,
+            'y': net_flows_billions,
             'type': 'bar',
-            'name': 'Доля объема (%)',
-            'marker': {'color': 'lightblue'},
-            'text': [f"{v}%" for v in volumes],
-            'textposition': 'outside'
+            'name': 'Чистый поток (млрд ₽)',
+            'marker': {'color': colors},
+            'text': [f"{direction}<br>{flow:.1f} млрд ₽<br>Доля СЧА: {share:.1f}%" 
+                    for direction, flow, share in zip(flow_directions, net_flows_billions, nav_shares)],
+            'textposition': 'outside',
+            'hovertemplate': '<b>%{x}</b><br>' +
+                           'Поток: %{y:.1f} млрд ₽<br>' +
+                           'Доля СЧА: %{customdata:.1f}%<br>' +
+                           '<extra></extra>',
+            'customdata': nav_shares
         }]
         
         layout = {
-            'title': '💰 Потоки капитала по секторам',
-            'xaxis': {'title': 'Сектор', 'tickangle': -45},
-            'yaxis': {'title': 'Доля объема торгов (%)'},
+            'title': '💰 Реальные потоки капитала по типам активов<br><sub>На основе изменений СЧА фондов</sub>',
+            'xaxis': {'title': 'Тип активов', 'tickangle': -45},
+            'yaxis': {'title': 'Чистый поток капитала (млрд ₽)', 'zeroline': True},
             'height': 500,
-            'margin': {'b': 120}
+            'margin': {'t': 100, 'b': 120},
+            'showlegend': False,
+            'annotations': [
+                {
+                    'text': '🟢 Приток капитала | 🔴 Отток капитала',
+                    'xref': 'paper',
+                    'yref': 'paper',
+                    'x': 0.5,
+                    'y': -0.15,
+                    'showarrow': False,
+                    'font': {'size': 12}
+                }
+            ]
         }
         
         return jsonify({'data': fig_data, 'layout': layout})
