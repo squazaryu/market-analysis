@@ -2238,6 +2238,29 @@ HTML_TEMPLATE = """
                           <div class="badge bg-${insights.market_sentiment.sentiment === 'Risk-On' ? 'success' : insights.market_sentiment.sentiment === 'Risk-Off' ? 'danger' : 'secondary'} mb-2">
                             ${insights.market_sentiment.sentiment} (${insights.market_sentiment.confidence}%)
                           </div>
+                          <div class="small text-muted mt-1">
+                            ${insights.market_sentiment.flow_intensity || 'Средняя'} интенсивность потоков
+                          </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                          <h6>💰 Потоки капитала</h6>
+                          <div class="small">
+                            <div class="d-flex justify-content-between">
+                              <span>🛡️ Защитные:</span>
+                              <span class="text-${(insights.market_sentiment.defensive_flow || 0) > 0 ? 'success' : 'danger'}">${(insights.market_sentiment.defensive_flow || 0).toFixed(1)} млрд ₽</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                              <span>📈 Рисковые:</span>
+                              <span class="text-${(insights.market_sentiment.risky_flow || 0) > 0 ? 'success' : 'danger'}">${(insights.market_sentiment.risky_flow || 0).toFixed(1)} млрд ₽</span>
+                            </div>
+                            ${insights.market_sentiment.mixed_flow ? `
+                            <div class="d-flex justify-content-between">
+                              <span>🔄 Смешанные:</span>
+                              <span class="text-${insights.market_sentiment.mixed_flow > 0 ? 'success' : 'danger'}">${insights.market_sentiment.mixed_flow.toFixed(1)} млрд ₽</span>
+                            </div>
+                            ` : ''}
+                          </div>
                         </div>
                         
                         <div class="mb-3">

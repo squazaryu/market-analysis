@@ -171,113 +171,188 @@ class CapitalFlowAnalyzer:
         
         return asset_flows.sort_values('total_net_flow', ascending=False)
     
-    def detect_risk_sentiment(self) -> Dict[str, any]:
-        """Определяет рыночные настроения (risk-on/risk-off) на основе потоков капитала"""
+    def calculate_sector_flows(self) -> pd.DataFrame:
+        """Рассчитывает потоки капитала по секторам (типам активов)"""
         
+        # Используем уже реализованный метод calculate_real_capital_flows
         asset_flows = self.calculate_real_capital_flows()
         
-        # Защитные активы (risk-off)
-        defensive_assets = ['Облигации', 'Денежный рынок', 'Товары']  # Товары включают золото
-        # Рисковые активы (risk-on) 
-        risky_assets = ['Акции']
+        # Переименовываем для совместимости с остальным кодом
+        sector_flows = asset_flows.copy()
+        sector_flows.rename(columns={
+            'total_nav': 'volume_share',
+            'total_net_flow': 'net_flow', 
+            'avg_flow_percent': 'avg_return',
+            'funds_count': 'etf_count'
+        }, inplace=True)
         
-        defensive_flow = asset_flows[
-            asset_flows.index.isin(defensive_assets)
-        ]['total_net_flow'].sum()
-        
-        risky_flow = asset_flows[
-            asset_flows.index.isin(risky_assets)
-        ]['total_net_flow'].sum()
-        
-        # Также учитываем объемы (СЧА)
-        defensive_nav = asset_flows[
-            asset_flows.index.isin(defensive_assets)
-        ]['nav_share'].sum()
-        
-        risky_nav = asset_flows[
-            asset_flows.index.isin(risky_assets)
-        ]['nav_share'].sum()
-        
-        # Определяем настроения на основе направления потоков
-        if defensive_flow > abs(risky_flow) * 0.5 and defensive_flow > 0:
-            sentiment = "Risk-Off"
-            confidence = min(95, abs(defensive_flow) / max(abs(risky_flow), 1) * 40)
-        elif risky_flow > abs(defensive_flow) * 0.5 and risky_flow > 0:
-            sentiment = "Risk-On" 
-            confidence = min(95, abs(risky_flow) / max(abs(defensive_flow), 1) * 40)
+        # Добавляем долю рынка в процентах
+        total_volume = sector_flows['volume_share'].sum()
+        if total_volume > 0:
+            sector_flows['market_cap_share'] = (sector_flows['volume_share'] / total_volume * 100).round(1)
         else:
-            sentiment = "Нейтральный"
-            confidence = 30
-        
-        return {
-            'sentiment': sentiment,
-            'confidence': round(confidence, 1),
-            'defensive_flow': round(defensive_flow / 1e9, 2),  # в млрд руб
-            'risky_flow': round(risky_flow / 1e9, 2),         # в млрд руб
-            'defensive_share': round(defensive_nav, 1),
-            'risky_share': round(risky_nav, 1)
-        }
+            sector_flows['market_cap_share'] = 0
+            
+        return sector_flows.sort_values('volume_share', ascending=False)
     
     def analyze_sector_momentum(self) -> pd.DataFrame:
         """Анализирует моментум по секторам"""
         
         sector_flows = self.calculate_sector_flows()
         
-        # Рассчитываем индикаторы моментума
-        sector_flows['momentum_score'] = (
-            sector_flows['avg_return'] * 0.4 +  # Доходность
-            (100 - sector_flows['avg_volatility']) * 0.3 +  # Стабильность
-            sector_flows['volume_share'] * 0.3  # Объем торгов
-        ).round(1)
+        # Рассчитываем моментум на основе потоков капитала и доходности
+        momentum_data = []
         
-        # Классифицируем моментум
-        def classify_momentum(score):
-            if score >= 70:
-                return "Сильный рост"
-            elif score >= 50:
-                return "Умеренный рост"
-            elif score >= 30:
-                return "Стагнация"
+        for sector, row in sector_flows.iterrows():
+            # Базовый моментум = комбинация потока капитала и доходности
+            flow_momentum = row['net_flow'] / max(abs(sector_flows['net_flow']).max(), 1) * 50
+            return_momentum = row['avg_return'] * 2  # увеличиваем влияние доходности
+            
+            # Общий моментум 
+            momentum_score = (flow_momentum + return_momentum) / 2
+            
+            # Определяем тренд
+            if momentum_score > 10:
+                trend = 'Восходящий'
+            elif momentum_score < -10:
+                trend = 'Нисходящий'  
             else:
-                return "Снижение"
+                trend = 'Боковой'
                 
-        sector_flows['momentum_trend'] = sector_flows['momentum_score'].apply(classify_momentum)
+            momentum_data.append({
+                'sector': sector,
+                'momentum_score': round(momentum_score, 1),
+                'momentum_trend': trend,
+                'flow_component': round(flow_momentum, 1),
+                'return_component': round(return_momentum, 1)
+            })
         
-        return sector_flows.sort_values('momentum_score', ascending=False)
+        momentum_df = pd.DataFrame(momentum_data)
+        momentum_df.set_index('sector', inplace=True)
+        
+        return momentum_df.sort_values('momentum_score', ascending=False)
     
-    def detect_flow_anomalies(self) -> List[Dict]:
+    def detect_flow_anomalies(self) -> List[Dict[str, any]]:
         """Выявляет аномальные потоки капитала"""
         
-        sector_flows = self.calculate_sector_flows()
+        asset_flows = self.calculate_real_capital_flows()
         anomalies = []
         
-        # Проверяем аномально высокие объемы
-        volume_threshold = sector_flows['volume_share'].mean() + 2 * sector_flows['volume_share'].std()
+        # Пороги для выявления аномалий
+        volume_threshold = asset_flows['total_nav'].quantile(0.8)  # Топ-20% по объему
+        flow_threshold = asset_flows['total_net_flow'].abs().quantile(0.7)  # Топ-30% по потокам
         
-        for sector, data in sector_flows.iterrows():
-            if data['volume_share'] > volume_threshold:
+        for sector, row in asset_flows.iterrows():
+            # Аномалии по объему потоков
+            if abs(row['total_net_flow']) > flow_threshold:
                 anomalies.append({
-                    'type': 'Высокий объем',
+                    'type': 'Аномальный поток',
                     'sector': sector,
-                    'value': data['volume_share'],
-                    'threshold': round(volume_threshold, 1),
-                    'severity': 'Высокая' if data['volume_share'] > volume_threshold * 1.5 else 'Средняя'
+                    'value': abs(row['total_net_flow']) / 1e9,  # в млрд руб
+                    'direction': 'Приток' if row['total_net_flow'] > 0 else 'Отток',
+                    'threshold': round(flow_threshold / 1e9, 1),
+                    'severity': 'Высокая' if abs(row['total_net_flow']) > flow_threshold * 1.5 else 'Средняя'
                 })
-                
-        # Проверяем аномальную доходность
-        return_threshold = abs(sector_flows['avg_return'].mean()) + 2 * sector_flows['avg_return'].std()
-        
-        for sector, data in sector_flows.iterrows():
-            if abs(data['avg_return']) > return_threshold:
+            
+            # Аномалии по доходности при больших объемах
+            if row['total_nav'] > volume_threshold and abs(row['avg_flow_percent']) > 5:
                 anomalies.append({
                     'type': 'Аномальная доходность',
                     'sector': sector, 
-                    'value': data['avg_return'],
-                    'threshold': round(return_threshold, 1),
-                    'severity': 'Высокая' if abs(data['avg_return']) > return_threshold * 1.5 else 'Средняя'
+                    'value': abs(row['avg_flow_percent']),
+                    'direction': 'Рост' if row['avg_flow_percent'] > 0 else 'Падение',
+                    'threshold': 5.0,
+                    'severity': 'Высокая' if abs(row['avg_flow_percent']) > 10 else 'Средняя'
                 })
-                
+        
         return sorted(anomalies, key=lambda x: x['value'], reverse=True)
+    
+    def detect_risk_sentiment(self) -> Dict[str, any]:
+        """Определяет рыночные настроения (risk-on/risk-off) на основе потоков капитала"""
+        
+        asset_flows = self.calculate_real_capital_flows()
+        
+        # Защитные активы (risk-off) - инвесторы ищут стабильность
+        defensive_assets = ['Облигации', 'Денежный рынок', 'Товары']  # Товары включают золото
+        # Рисковые активы (risk-on) - инвесторы готовы к риску ради доходности
+        risky_assets = ['Акции']
+        # Смешанные активы - промежуточная категория
+        mixed_assets = ['Смешанные']
+        
+        # Рассчитываем потоки по категориям
+        defensive_flow = asset_flows[asset_flows.index.isin(defensive_assets)]['total_net_flow'].sum()
+        risky_flow = asset_flows[asset_flows.index.isin(risky_assets)]['total_net_flow'].sum()
+        mixed_flow = asset_flows[asset_flows.index.isin(mixed_assets)]['total_net_flow'].sum()
+        
+        # Рассчитываем доли активов (по СЧА)
+        defensive_nav = asset_flows[asset_flows.index.isin(defensive_assets)]['nav_share'].sum()
+        risky_nav = asset_flows[asset_flows.index.isin(risky_assets)]['nav_share'].sum()
+        mixed_nav = asset_flows[asset_flows.index.isin(mixed_assets)]['nav_share'].sum()
+        
+        # Общий объем потоков для нормализации
+        total_flow = abs(defensive_flow) + abs(risky_flow) + abs(mixed_flow)
+        
+        # Улучшенная логика определения настроений
+        sentiment_score = 0
+        confidence = 0
+        
+        if total_flow > 0:
+            # Risk-Off индикаторы: приток в защитные активы, отток из рисковых
+            risk_off_score = (defensive_flow / total_flow * 100) - (risky_flow / total_flow * 100)
+            
+            # Risk-On индикаторы: приток в рисковые активы, отток из защитных
+            risk_on_score = (risky_flow / total_flow * 100) - (defensive_flow / total_flow * 100)
+            
+            # Учитываем объемы притоков/оттоков
+            flow_intensity = total_flow / 1e9  # в млрд руб
+            
+            if risk_off_score > 20 and defensive_flow > 0:
+                sentiment = "Risk-Off"
+                sentiment_score = risk_off_score
+                confidence = min(95, max(40, risk_off_score + flow_intensity * 10))
+            elif risk_on_score > 20 and risky_flow > 0:
+                sentiment = "Risk-On" 
+                sentiment_score = risk_on_score
+                confidence = min(95, max(40, risk_on_score + flow_intensity * 10))
+            elif abs(risk_off_score) <= 20 and abs(risk_on_score) <= 20:
+                sentiment = "Нейтральный"
+                sentiment_score = 0
+                confidence = max(20, 50 - abs(risk_off_score - risk_on_score))
+            elif defensive_flow < 0 and risky_flow < 0:
+                # Оттоки из всех активов - паника или переключение в кэш
+                sentiment = "Неопределенный"
+                sentiment_score = -abs(defensive_flow + risky_flow) / total_flow * 100
+                confidence = 60
+            else:
+                # Смешанные сигналы
+                if abs(defensive_flow) > abs(risky_flow):
+                    sentiment = "Risk-Off" if defensive_flow > 0 else "Осторожный"
+                    sentiment_score = defensive_flow / total_flow * 100
+                else:
+                    sentiment = "Risk-On" if risky_flow > 0 else "Осторожный"
+                    sentiment_score = risky_flow / total_flow * 100
+                confidence = 40
+        else:
+            # Нет значимых потоков
+            sentiment = "Застой"
+            confidence = 20
+            sentiment_score = 0
+        
+        return {
+            'sentiment': sentiment,
+            'confidence': round(confidence, 1),
+            'sentiment_score': round(sentiment_score, 1),
+            'defensive_flow': round(defensive_flow / 1e9, 2),  # в млрд руб
+            'risky_flow': round(risky_flow / 1e9, 2),         # в млрд руб
+            'mixed_flow': round(mixed_flow / 1e9, 2),         # в млрд руб
+            'total_flow': round(total_flow / 1e9, 2),         # в млрд руб
+            'defensive_share': round(defensive_nav, 1),
+            'risky_share': round(risky_nav, 1),
+            'mixed_share': round(mixed_nav, 1),
+            'flow_intensity': 'Высокая' if total_flow > 2e9 else 'Средняя' if total_flow > 0.5e9 else 'Низкая',
+            'analysis_period': '30 дней'
+        }
+    
     
     def generate_flow_insights(self) -> Dict[str, any]:
         """Генерирует инсайты по потокам капитала"""
