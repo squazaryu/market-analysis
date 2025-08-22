@@ -1015,9 +1015,13 @@ HTML_TEMPLATE = """
                     ticktext: detailData.sectors.map(function(sector) {
                         // Умное сокращение названий
                         let shortName = sector;
+                        console.log('Исходное название:', sector);
                         
                         // Убираем содержимое скобок
-                        shortName = shortName.replace(/\\([^)]*\\)/g, '').trim();
+                        if (shortName.indexOf('(') !== -1) {
+                            shortName = shortName.substring(0, shortName.indexOf('(')).trim();
+                            console.log('После удаления скобок:', shortName);
+                        }
                         
                         // Сокращаем ключевые слова
                         shortName = shortName
@@ -1036,9 +1040,10 @@ HTML_TEMPLATE = """
                         
                         // Если все еще длинное - обрезаем
                         if (shortName.length > 18) {
-                            return shortName.substring(0, 15) + '...';
+                            shortName = shortName.substring(0, 15) + '...';
                         }
                         
+                        console.log('Итоговое название:', shortName);
                         return shortName;
                     }),
                     tickfont: {size: 10},
