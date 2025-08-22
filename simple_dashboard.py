@@ -1009,43 +1009,44 @@ HTML_TEMPLATE = """
                 title: chartTitle,
                 xaxis: {
                     title: 'Подкатегории',
-                    tickangle: 0,
+                    tickangle: -30,
                     tickmode: 'array',
                     tickvals: detailData.sectors,
                     ticktext: detailData.sectors.map(function(sector) {
-                        // Разбиваем длинные названия на строки
-                        if (sector.length > 25) {
-                            // Ищем удачное место для разрыва
-                            let words = sector.split(' ');
-                            if (words.length >= 2) {
-                                let firstLine = '';
-                                let secondLine = '';
-                                let midpoint = Math.ceil(words.length / 2);
-                                
-                                firstLine = words.slice(0, midpoint).join(' ');
-                                secondLine = words.slice(midpoint).join(' ');
-                                
-                                // Если строки все еще слишком длинные
-                                if (firstLine.length > 20) {
-                                    firstLine = firstLine.substring(0, 17) + '...';
-                                }
-                                if (secondLine.length > 20) {
-                                    secondLine = secondLine.substring(0, 17) + '...';
-                                }
-                                
-                                return firstLine + '\\n' + secondLine;
-                            }
+                        // Умное сокращение названий
+                        let shortName = sector;
+                        
+                        // Убираем содержимое скобок
+                        shortName = shortName.replace(/\\([^)]*\\)/g, '').trim();
+                        
+                        // Сокращаем ключевые слова
+                        shortName = shortName
+                            .replace('Корпоративные', 'Корп.')
+                            .replace('Государственные', 'Гос.')
+                            .replace('Долгосрочные', 'Долг.')
+                            .replace('Краткосрочные', 'Кратк.')
+                            .replace('Аналитические', 'Анал.')
+                            .replace('Технологические', 'Тех.')
+                            .replace('Российские', 'РФ')
+                            .replace('Устойчивое развитие', 'ESG')
+                            .replace('Специализированные', 'Спец.')
+                            .replace('Малая капитализация', 'Малая кап.')
+                            .replace('Широкий рынок', 'Широкий')
+                            .replace('Смешанные', 'Микс');
+                        
+                        // Если все еще длинное - обрезаем
+                        if (shortName.length > 18) {
+                            return shortName.substring(0, 15) + '...';
                         }
                         
-                        // Если короткое название - оставляем как есть
-                        return sector;
+                        return shortName;
                     }),
-                    tickfont: {size: 11},
+                    tickfont: {size: 10},
                     automargin: true
                 },
                 yaxis: {title: yTitle},
                 height: 650,
-                margin: {b: 140, l: 60, r: 30, t: 80},
+                margin: {b: 160, l: 60, r: 30, t: 80},
                 width: null,
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 paper_bgcolor: 'rgba(0,0,0,0)'
