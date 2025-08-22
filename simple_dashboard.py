@@ -1009,21 +1009,41 @@ HTML_TEMPLATE = """
                 title: chartTitle,
                 xaxis: {
                     title: 'Подкатегории',
-                    tickangle: 0,
+                    tickangle: -20,
                     tickmode: 'array',
                     tickvals: detailData.sectors,
                     ticktext: detailData.sectors.map(function(sector) {
-                        // Сокращаем длинные названия
-                        if (sector.length > 25) {
-                            return sector.substring(0, 22) + '...';
+                        // Умное сокращение для русских названий
+                        let shortName = sector;
+                        
+                        // Удаляем слова в скобках
+                        shortName = shortName.replace(/\([^)]*\)/g, '').trim();
+                        
+                        // Заменяем длинные слова сокращениями
+                        shortName = shortName
+                            .replace('Корпоративные', 'Корп.')
+                            .replace('Долгосрочные', 'Долг.')
+                            .replace('Краткосрочные', 'Кратк.')
+                            .replace('Государственные', 'Гос.')
+                            .replace('Устойчивое', 'Уст.')
+                            .replace('Развитие', 'Разв.')
+                            .replace('Аналитические', 'Анал.')
+                            .replace('Технологические', 'Тех.')
+                            .replace('Российские', 'РФ')
+                            .replace('Специализированные', 'Спец.');
+                        
+                        // Если все еще длинное - обрезаем
+                        if (shortName.length > 18) {
+                            return shortName.substring(0, 15) + '...';
                         }
-                        return sector;
+                        
+                        return shortName;
                     }),
-                    tickfont: {size: 11}
+                    tickfont: {size: 10}
                 },
                 yaxis: {title: yTitle},
-                height: 550,
-                margin: {b: 150, l: 70, r: 50, t: 80},
+                height: 600,
+                margin: {b: 180, l: 70, r: 50, t: 80},
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 paper_bgcolor: 'rgba(0,0,0,0)'
             };
