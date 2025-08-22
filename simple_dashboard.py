@@ -1033,18 +1033,20 @@ HTML_TEMPLATE = """
                                     secondLine = secondLine.substring(0, 17) + '...';
                                 }
                                 
-                                return firstLine + '<br>' + secondLine;
+                                return firstLine + '\n' + secondLine;
                             }
                         }
                         
                         // Если короткое название - оставляем как есть
                         return sector;
                     }),
-                    tickfont: {size: 11}
+                    tickfont: {size: 11},
+                    automargin: true
                 },
                 yaxis: {title: yTitle},
-                height: 600,
-                margin: {b: 120, l: 70, r: 50, t: 80},
+                height: 650,
+                margin: {b: 140, l: 60, r: 30, t: 80},
+                width: null, // Автоматическая ширина для заполнения контейнера
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 paper_bgcolor: 'rgba(0,0,0,0)'
             };
@@ -1151,8 +1153,9 @@ HTML_TEMPLATE = """
                     tickfont: {size: 12}
                 },
                 yaxis: {title: yTitle},
-                height: 550,
-                margin: {b: 100, l: 70, r: 50, t: 80},
+                height: 600,
+                margin: {b: 100, l: 60, r: 30, t: 80},
+                width: null,
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 paper_bgcolor: 'rgba(0,0,0,0)'
             };
@@ -3318,8 +3321,9 @@ def api_sector_analysis():
                 'tickfont': {'size': 12}
             },
             'yaxis': {'title': 'Средняя доходность (%)'},
-            'height': 550,
-            'margin': {'b': 100, 'l': 70, 'r': 50, 't': 80},
+            'height': 600,
+            'margin': {'b': 100, 'l': 60, 'r': 30, 't': 80},
+            'width': None,
             'plot_bgcolor': 'rgba(0,0,0,0)',
             'paper_bgcolor': 'rgba(0,0,0,0)',
             'hovermode': 'closest'
