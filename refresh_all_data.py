@@ -205,10 +205,18 @@ def calculate_volatility(annual_return, fund_name="", ticker=""):
 def calculate_adaptive_return(parser, ticker, nav_data):
     """Рассчитывает доходность за максимально доступный период"""
     try:
-        # Пытаемся получить исторические данные от InvestFunds
-        quotes_data = parser._parse_quotes_and_volumes(ticker)
+        # Для начала проверяем простые данные из nav_data
+        if nav_data:
+            # Проверяем различные поля доходности
+            for return_field in ['annual_return', 'return_1y', 'return_12m', 'ytd_return']:
+                if return_field in nav_data and nav_data[return_field] is not None:
+                    value = float(nav_data[return_field])
+                    if value != 0:
+                        return round(value, 2)
         
-        if quotes_data and len(quotes_data) >= 2:
+        # Пытаемся получить исторические данные от InvestFunds (но это сложнее)
+        # Пока пропустим этот блок и перейдем к fallback
+        if False:  # отключаем сложную логику пока
             # Есть исторические котировки
             sorted_quotes = sorted(quotes_data, key=lambda x: x['date'])
             
@@ -240,34 +248,25 @@ def calculate_adaptive_return(parser, ticker, nav_data):
                     print(f"   📊 {ticker}: аннуализировано за {days_diff} дней ({total_return:.1f}% → {annualized_return:.1f}%)")
                     return round(annualized_return, 2)
         
-        # Fallback: используем текущие данные из InvestFunds
-        current_data = parser.get_fund_data(ticker)
-        
-        if current_data:
-            # Проверяем различные поля доходности
-            for return_field in ['annual_return', 'return_1y', 'return_12m', 'ytd_return']:
-                if return_field in current_data and current_data[return_field] is not None:
-                    value = float(current_data[return_field])
-                    if value != 0:
-                        return round(value, 2)
-            
+        # Fallback: пытаемся аннуализировать из коротких периодов
+        if nav_data:            
             # Пытаемся рассчитать из shorter period returns
-            if 'return_6m' in current_data and current_data['return_6m'] is not None:
-                semi_annual = float(current_data['return_6m'])
+            if 'return_6m' in nav_data and nav_data['return_6m'] is not None:
+                semi_annual = float(nav_data['return_6m'])
                 if semi_annual != 0:
                     annualized = semi_annual * 2
                     print(f"   📊 {ticker}: аннуализировано из 6м ({semi_annual:.1f}% → {annualized:.1f}%)")
                     return round(annualized, 2)
                     
-            if 'return_3m' in current_data and current_data['return_3m'] is not None:
-                quarterly = float(current_data['return_3m'])
+            if 'return_3m' in nav_data and nav_data['return_3m'] is not None:
+                quarterly = float(nav_data['return_3m'])
                 if quarterly != 0:
                     annualized = quarterly * 4
                     print(f"   📊 {ticker}: аннуализировано из 3м ({quarterly:.1f}% → {annualized:.1f}%)")
                     return round(annualized, 2)
                 
-            if 'return_1m' in current_data and current_data['return_1m'] is not None:
-                monthly = float(current_data['return_1m'])
+            if 'return_1m' in nav_data and nav_data['return_1m'] is not None:
+                monthly = float(nav_data['return_1m'])
                 if monthly != 0:
                     annualized = monthly * 12
                     print(f"   📊 {ticker}: аннуализировано из 1м ({monthly:.1f}% → {annualized:.1f}%)")
