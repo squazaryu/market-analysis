@@ -994,20 +994,38 @@ HTML_TEMPLATE = """
                 },
                 customdata: detailData.counts,
                 hovertemplate: '<b>%{x}</b><br>' +
-                             (currentView === 'returns' ? 'Доходность: %{y}%<br>' : 'СЧА: %{y} млрд ₽<br>') +
+                             (currentView === 'returns' ? 'Доходность: %{y:.1f}%<br>' : 'СЧА: %{y:.1f} млрд ₽<br>') +
                              'Фондов: %{customdata}<br>' +
-                             '<extra></extra>'
+                             '<i>Кликните для просмотра фондов</i><br>' +
+                             '<extra></extra>',
+                hoverlabel: {
+                    bgcolor: 'rgba(255,255,255,0.9)',
+                    bordercolor: '#333',
+                    font: {size: 12, color: '#333'}
+                }
             }];
             
             const detailLayout = {
                 title: chartTitle,
                 xaxis: {
                     title: 'Подкатегории',
-                    tickangle: -45
+                    tickangle: 0,
+                    tickmode: 'array',
+                    tickvals: detailData.sectors,
+                    ticktext: detailData.sectors.map(function(sector) {
+                        // Сокращаем длинные названия
+                        if (sector.length > 25) {
+                            return sector.substring(0, 22) + '...';
+                        }
+                        return sector;
+                    }),
+                    tickfont: {size: 11}
                 },
                 yaxis: {title: yTitle},
-                height: 500,
-                margin: {b: 120}
+                height: 550,
+                margin: {b: 150, l: 70, r: 50, t: 80},
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                paper_bgcolor: 'rgba(0,0,0,0)'
             };
             
             // Обновляем график с детализацией
@@ -1093,21 +1111,29 @@ HTML_TEMPLATE = """
                 }),
                 hovertemplate: '<b>%{x}</b><br>' +
                              '%{customdata.name}<br>' +
-                             'Доходность: %{customdata.annual_return}%<br>' +
-                             'Волатильность: %{customdata.volatility}%<br>' +
-                             'СЧА: %{customdata.nav} млрд ₽<br>' +
-                             '<extra></extra>'
+                             'Доходность: %{customdata.annual_return:.1f}%<br>' +
+                             'Волатильность: %{customdata.volatility:.1f}%<br>' +
+                             'СЧА: %{customdata.nav:.1f} млрд ₽<br>' +
+                             '<extra></extra>',
+                hoverlabel: {
+                    bgcolor: 'rgba(255,255,255,0.9)',
+                    bordercolor: '#333',
+                    font: {size: 12, color: '#333'}
+                }
             }];
             
             const fundsLayout = {
                 title: chartTitle,
                 xaxis: {
                     title: 'Тикеры фондов',
-                    tickangle: -45
+                    tickangle: 0,
+                    tickfont: {size: 12}
                 },
                 yaxis: {title: yTitle},
-                height: 500,
-                margin: {b: 120}
+                height: 550,
+                margin: {b: 100, l: 70, r: 50, t: 80},
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                paper_bgcolor: 'rgba(0,0,0,0)'
             };
             
             // Обновляем график со списком фондов
@@ -3224,9 +3250,15 @@ def api_sector_analysis():
             },
             'customdata': asset_stats['ticker'].tolist(),
             'hovertemplate': '<b>%{x}</b><br>' +
-                           'Доходность: %{y}%<br>' +
+                           'Доходность: %{y:.1f}%<br>' +
                            'Фондов: %{customdata}<br>' +
-                           '<extra></extra>'
+                           '<i>Кликните для детализации</i><br>' +
+                           '<extra></extra>',
+            'hoverlabel': {
+                'bgcolor': 'rgba(255,255,255,0.9)',
+                'bordercolor': '#333',
+                'font': {'size': 12, 'color': '#333'}
+            }
         }]
         
         # Подготовка данных для детального анализа с информацией о фондах
@@ -3259,9 +3291,16 @@ def api_sector_analysis():
         
         layout = {
             'title': '🏢 Анализ по типам активов (кликните для детализации)',
-            'xaxis': {'title': 'Тип активов'},
+            'xaxis': {
+                'title': 'Тип активов',
+                'tickangle': 0,
+                'tickfont': {'size': 12}
+            },
             'yaxis': {'title': 'Средняя доходность (%)'},
-            'height': 500,
+            'height': 550,
+            'margin': {'b': 100, 'l': 70, 'r': 50, 't': 80},
+            'plot_bgcolor': 'rgba(0,0,0,0)',
+            'paper_bgcolor': 'rgba(0,0,0,0)',
             'hovermode': 'closest'
         }
         
