@@ -1021,11 +1021,28 @@ HTML_TEMPLATE = """
                         if (shortName.indexOf('(') !== -1) {
                             shortName = shortName
                                 .replace('ESG/Устойчивое развитие', 'ESG')
-                                .replace('Ответственные инвестиции', 'Ответств. инвест.')
-                                .replace('Российские акции', 'РФ акции')
+                                .replace('Ответственные инвестиции', 'Ответств.')
+                                .replace('Российские акции', 'РФ')
                                 .replace('Голубые фишки', 'Голубые')
                                 .replace('Широкий рынок', 'Широкий')
-                                .replace('Технологии', 'IT');
+                                .replace('Технологии', 'IT')
+                                .replace('Высокодоходные', 'Высокодох.')
+                                .replace('Инновационные', 'Иннов.')
+                                .replace('Корпоративные', 'Корп.')
+                                .replace('Первого эшелона', 'Первый эш.')
+                                .replace('Государственные', 'Гос.')
+                                .replace('Плавающая ставка', 'Плав. ст.')
+                                .replace('Антиинфляционные', 'Антиинф.')
+                                .replace('Инструменты в ю...', 'Инстр. ю.')
+                                .replace('Вечный портфель', 'Вечный')
+                                .replace('Всепогодный', 'Всепог.')
+                                .replace('Консервативный', 'Консерв.')
+                                .replace('Регулярный', 'Регул.')
+                                .replace('Целевые доходы', 'Целевые')
+                                .replace('Накопительный', 'Накопит.')
+                                .replace('Сберегательный', 'Сберегат.')
+                                .replace('Ликвидность', 'Ликвид.')
+                                .replace('Расширенные корзины', 'Расшир.');
                         }
                         
                         // Сокращаем ключевые слова
@@ -3287,6 +3304,66 @@ def api_sector_analysis():
                     return 'Акции (Халяльные инвестиции)'
                 else:
                     return 'Акции (Прочие)'
+            elif 'облига' in sector_lower:
+                # Детальная разбивка облигаций
+                if 'высок' in name_lower:
+                    return 'Облигации (Высокодоходные)'
+                elif 'инн' in name_lower or 'инноваци' in name_lower:
+                    return 'Облигации (Инновационные)'
+                elif 'корп' in name_lower:
+                    return 'Облигации (Корпоративные)'
+                elif 'перв' in name_lower:
+                    return 'Облигации (Первого эшелона)'
+                elif 'госуд' in name_lower or 'гос' in name_lower:
+                    return 'Облигации (Государственные)'
+                elif 'плав' in name_lower:
+                    return 'Облигации (Плавающая ставка)'
+                elif 'микс' in name_lower or 'смешан' in name_lower:
+                    return 'Облигации (Микс)'
+                elif 'цел' in name_lower:
+                    return 'Облигации (Целевые)'
+                elif 'валют' in name_lower:
+                    return 'Облигации (В валюте)'
+                else:
+                    return 'Облигации (Прочие)'
+            elif 'денежн' in sector_lower:
+                # Детальная разбивка денежного рынка
+                if 'ликвид' in name_lower:
+                    return 'Денежный рынок (Ликвидность)'
+                elif 'накопит' in name_lower:
+                    return 'Денежный рынок (Накопительный)'
+                elif 'сберегат' in name_lower:
+                    return 'Денежный рынок (Сберегательный)'
+                else:
+                    return 'Денежный рынок (Прочие)'
+            elif 'смешанн' in sector_lower:
+                # Детальная разбивка смешанных фондов
+                if 'антиинф' in name_lower:
+                    return 'Смешанные (Антиинфляционные)'
+                elif 'инструм' in name_lower:
+                    return 'Смешанные (Инструменты в ю...)'
+                elif 'вечн' in name_lower:
+                    return 'Смешанные (Вечный портфель)'
+                elif 'всепогод' in name_lower:
+                    return 'Смешанные (Всепогодный)'
+                elif 'консерв' in name_lower:
+                    return 'Смешанные (Консервативный)'
+                elif 'регуляр' in name_lower:
+                    return 'Смешанные (Регулярный)'
+                elif 'цел' in name_lower:
+                    return 'Смешанные (Целевые доходы)'
+                elif 'валют' in name_lower:
+                    return 'Смешанные (Валютные)'
+                else:
+                    return 'Смешанные (Прочие)'
+            elif 'товар' in sector_lower:
+                # Детальная разбивка товаров
+                if 'золот' in name_lower:
+                    return 'Товары (Золото)'
+                elif 'расширен' in name_lower:
+                    return 'Товары (Расширенные корзины)'
+                else:
+                    return 'Товары (Прочие)'
             else:
                 return row['sector']
         
