@@ -71,16 +71,21 @@ def create_fresh_data():
                 fund_data = parser.find_fund_by_ticker(ticker)
                 
                 if fund_data:
-                    # Рассчитываем метрики
-                    annual_return = fund_data.get('annual_return', 0)
+                    # Рассчитываем адаптивную доходность (за максимально доступный период)
+                    annual_return = calculate_adaptive_return(parser, ticker, fund_data)
+                    
+                    # Также сохраняем исходную доходность за 1 год, если есть
+                    original_annual = fund_data.get('annual_return', 0)
+                    
                     fund_name = fund_data.get('name', f'БПИФ {ticker}')
-                    volatility = calculate_volatility(annual_return, fund_name, ticker)
+                    volatility = calculate_volatility(annual_return if annual_return != 0 else original_annual, fund_name, ticker)
                     sharpe_ratio = calculate_sharpe(annual_return, volatility)
                     
                     fund_record = {
                         'ticker': ticker,
                         'name': fund_data.get('name', f'БПИФ {ticker}'),
                         'annual_return': round(annual_return, 2),
+                        'original_annual_return': round(original_annual, 2),  # Оригинальная годовая если есть
                         'volatility': round(volatility, 2),
                         'sharpe_ratio': round(sharpe_ratio, 3),
                         'current_price': round(fund_data.get('unit_price', 100), 4),
@@ -196,6 +201,85 @@ def calculate_volatility(annual_return, fund_name="", ticker=""):
     
     # Ограничиваем диапазон по типам активов
     return max(min_vol, min(max_vol, calculated_vol))
+
+def calculate_adaptive_return(parser, ticker, nav_data):
+    """Рассчитывает доходность за максимально доступный период"""
+    try:
+        # Пытаемся получить исторические данные от InvestFunds
+        quotes_data = parser._parse_quotes_and_volumes(ticker)
+        
+        if quotes_data and len(quotes_data) >= 2:
+            # Есть исторические котировки
+            sorted_quotes = sorted(quotes_data, key=lambda x: x['date'])
+            
+            start_price = float(sorted_quotes[0]['price'])
+            end_price = float(sorted_quotes[-1]['price'])
+            
+            # Рассчитываем количество дней
+            start_date = sorted_quotes[0]['date']
+            end_date = sorted_quotes[-1]['date']
+            
+            if isinstance(start_date, str):
+                from datetime import datetime
+                start_date = datetime.strptime(start_date, '%Y-%m-%d')
+                end_date = datetime.strptime(end_date, '%Y-%m-%d')
+            
+            days_diff = (end_date - start_date).days
+            
+            if days_diff > 0 and start_price > 0:
+                # Рассчитываем доходность и аннуализируем
+                total_return = (end_price / start_price - 1) * 100
+                
+                if days_diff >= 365:
+                    # Больше года - обычная аннуализация
+                    annual_return = (end_price / start_price) ** (365.25 / days_diff) - 1
+                    return round(annual_return * 100, 2)
+                else:
+                    # Меньше года - простая аннуализация с пометкой
+                    annualized_return = total_return * (365.25 / days_diff)
+                    print(f"   📊 {ticker}: аннуализировано за {days_diff} дней ({total_return:.1f}% → {annualized_return:.1f}%)")
+                    return round(annualized_return, 2)
+        
+        # Fallback: используем текущие данные из InvestFunds
+        current_data = parser.get_fund_data(ticker)
+        
+        if current_data:
+            # Проверяем различные поля доходности
+            for return_field in ['annual_return', 'return_1y', 'return_12m', 'ytd_return']:
+                if return_field in current_data and current_data[return_field] is not None:
+                    value = float(current_data[return_field])
+                    if value != 0:
+                        return round(value, 2)
+            
+            # Пытаемся рассчитать из shorter period returns
+            if 'return_6m' in current_data and current_data['return_6m'] is not None:
+                semi_annual = float(current_data['return_6m'])
+                if semi_annual != 0:
+                    annualized = semi_annual * 2
+                    print(f"   📊 {ticker}: аннуализировано из 6м ({semi_annual:.1f}% → {annualized:.1f}%)")
+                    return round(annualized, 2)
+                    
+            if 'return_3m' in current_data and current_data['return_3m'] is not None:
+                quarterly = float(current_data['return_3m'])
+                if quarterly != 0:
+                    annualized = quarterly * 4
+                    print(f"   📊 {ticker}: аннуализировано из 3м ({quarterly:.1f}% → {annualized:.1f}%)")
+                    return round(annualized, 2)
+                
+            if 'return_1m' in current_data and current_data['return_1m'] is not None:
+                monthly = float(current_data['return_1m'])
+                if monthly != 0:
+                    annualized = monthly * 12
+                    print(f"   📊 {ticker}: аннуализировано из 1м ({monthly:.1f}% → {annualized:.1f}%)")
+                    return round(annualized, 2)
+        
+        # Последний fallback - 0%
+        print(f"   ⚠️  {ticker}: данных о доходности не найдено, используется 0%")
+        return 0.0
+        
+    except Exception as e:
+        print(f"   ❌ Ошибка расчета доходности для {ticker}: {e}")
+        return 0.0
 
 def calculate_sharpe(annual_return, volatility):
     """Рассчитывает коэффициент Шарпа"""
