@@ -3540,32 +3540,44 @@ def api_capital_flows():
             'type': 'bar',
             'name': 'Чистый поток (млрд ₽)',
             'marker': {'color': colors},
-            'text': [f"{direction}<br>{flow:.1f} млрд ₽<br>Доля СЧА: {share:.1f}%" 
-                    for direction, flow, share in zip(flow_directions, net_flows_billions, nav_shares)],
+            'text': [f"{flow:.1f}" for flow in net_flows_billions],
             'textposition': 'outside',
+            'texttemplate': '%{text} млрд ₽',
             'hovertemplate': '<b>%{x}</b><br>' +
+                           'Направление: %{customdata[0]}<br>' +
                            'Поток: %{y:.1f} млрд ₽<br>' +
-                           'Доля СЧА: %{customdata:.1f}%<br>' +
+                           'Доля СЧА: %{customdata[1]:.1f}%<br>' +
                            '<extra></extra>',
-            'customdata': nav_shares
+            'customdata': list(zip(flow_directions, nav_shares))
         }]
         
         layout = {
             'title': '💰 Реальные потоки капитала по типам активов<br><sub>На основе изменений СЧА фондов</sub>',
-            'xaxis': {'title': 'Тип активов', 'tickangle': -45},
-            'yaxis': {'title': 'Чистый поток капитала (млрд ₽)', 'zeroline': True},
+            'xaxis': {
+                'title': 'Тип активов', 
+                'tickangle': 0,
+                'tickfont': {'size': 12}
+            },
+            'yaxis': {
+                'title': 'Чистый поток капитала (млрд ₽)', 
+                'zeroline': True,
+                'zerolinecolor': 'rgba(0,0,0,0.3)',
+                'zerolinewidth': 2
+            },
             'height': 500,
-            'margin': {'t': 100, 'b': 120},
+            'margin': {'t': 100, 'l': 80, 'r': 60, 'b': 100},
             'showlegend': False,
+            'plot_bgcolor': 'rgba(0,0,0,0)',
+            'paper_bgcolor': 'rgba(0,0,0,0)',
             'annotations': [
                 {
-                    'text': '🟢 Приток капитала | 🔴 Отток капитала',
+                    'text': '🟢 Приток капитала | 🔴 Отток капитала | Наведите курсор для деталей',
                     'xref': 'paper',
                     'yref': 'paper',
                     'x': 0.5,
-                    'y': -0.15,
+                    'y': -0.12,
                     'showarrow': False,
-                    'font': {'size': 12}
+                    'font': {'size': 11, 'color': 'gray'}
                 }
             ]
         }
