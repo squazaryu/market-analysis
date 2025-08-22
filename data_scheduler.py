@@ -100,10 +100,10 @@ class DataScheduler:
         try:
             # Здесь можно добавить специфическое обновление MOEX данных
             # Пока используем тот же механизм, но можно расширить
-            from config import MOEXProvider
+            from moex_provider import MOEXDataProvider
             
-            moex = MOEXProvider()
-            etfs = moex.get_all_etfs()
+            moex = MOEXDataProvider()
+            etfs = moex.get_securities_list()
             
             self.logger.info(f"📊 Получено {len(etfs)} ETF с MOEX")
             self.save_status('moex_weekly', 'success', f'Получено {len(etfs)} ETF тикеров')

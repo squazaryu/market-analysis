@@ -116,14 +116,14 @@ def prepare_analyzer_data(data):
 def create_initial_data():
     """Создает минимальный набор данных для инициализации дашборда"""
     try:
-        from moex_provider import MOEXProvider
+        from moex_provider import MOEXDataProvider
         import time
         
         print("🔄 Получение списка БПИФ с MOEX...")
         
         # Получаем базовые данные с MOEX
-        moex = MOEXProvider()
-        etfs_basic = moex.get_all_etfs()
+        moex = MOEXDataProvider()
+        etfs_basic = moex.get_securities_list()
         
         if not etfs_basic:
             print("❌ Не удалось получить список ETF с MOEX")
