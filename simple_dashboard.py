@@ -1015,12 +1015,10 @@ HTML_TEMPLATE = """
                     ticktext: detailData.sectors.map(function(sector) {
                         // Умное сокращение названий
                         let shortName = sector;
-                        console.log('Исходное название:', sector);
                         
                         // Убираем содержимое скобок
                         if (shortName.indexOf('(') !== -1) {
                             shortName = shortName.substring(0, shortName.indexOf('(')).trim();
-                            console.log('После удаления скобок:', shortName);
                         }
                         
                         // Сокращаем ключевые слова
@@ -1043,7 +1041,6 @@ HTML_TEMPLATE = """
                             shortName = shortName.substring(0, 15) + '...';
                         }
                         
-                        console.log('Итоговое название:', shortName);
                         return shortName;
                     }),
                     tickfont: {size: 10},
@@ -3237,6 +3234,7 @@ def api_sector_analysis():
         def get_detailed_sector(row):
             sector_lower = row['sector'].lower()
             name_lower = row.get('name', '').lower()
+            ticker = row.get('ticker', '').upper()
             
             if 'валютн' in sector_lower:
                 if 'облигации' in name_lower:
@@ -3254,6 +3252,34 @@ def api_sector_analysis():
                     return 'Расширенные товарные корзины'
                 else:
                     return 'Золото'
+            elif 'акци' in sector_lower:
+                # Детальная разбивка акций по названиям фондов
+                if 'esg' in name_lower or 'устойчив' in name_lower:
+                    return 'Акции (ESG/Устойчивое развитие)'
+                elif 'итальян' in name_lower or 'аналитич' in name_lower:
+                    return 'Акции (Аналитические стратегии)'
+                elif 'голуб' in name_lower or 'топ' in name_lower or 'лидер' in name_lower:
+                    return 'Акции (Голубые фишки)'
+                elif 'корпоративн' in name_lower:
+                    return 'Акции (Корпоративные)'
+                elif 'малая' in name_lower or 'мид' in name_lower:
+                    return 'Акции (Малая/средняя капитализация)'
+                elif 'широк' in name_lower or 'индекс' in name_lower or 'ртс' in name_lower or 'ммвб' in name_lower:
+                    return 'Акции (Широкий рынок)'
+                elif 'технолог' in name_lower or 'ит' in name_lower:
+                    return 'Акции (Технологии)'
+                elif 'отвественн' in name_lower or 'инвестиц' in name_lower:
+                    return 'Акции (Ответственные инвестиции)'
+                elif 'росс' in name_lower:
+                    return 'Акции (Российские акции)'
+                elif 'смешанн' in name_lower:
+                    return 'Акции (Смешанные)'
+                elif 'роста' in name_lower:
+                    return 'Акции (Рост российских акций)'
+                elif 'халяль' in name_lower:
+                    return 'Акции (Халяльные инвестиции)'
+                else:
+                    return 'Акции (Прочие)'
             else:
                 return row['sector']
         
