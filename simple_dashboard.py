@@ -897,11 +897,16 @@ HTML_TEMPLATE = """
                                                 BID/ASK (₽) <i class="fas fa-sort"></i>
                                             </button>
                                         </th>
+                                        <th>
+                                            <button class="btn btn-sm btn-outline-light border-0" onclick="sortTable('bid_ask_spread_pct')" title="Спред между BID и ASK в процентах - показатель ликвидности">
+                                                Спред (%) <i class="fas fa-sort"></i>
+                                            </button>
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr>
-                                        <td colspan="9" class="text-center py-4">
+                                        <td colspan="10" class="text-center py-4">
                                             <div class="spinner-border text-primary" role="status"></div>
                                             <p class="mt-2">Загрузка данных...</p>
                                         </td>
@@ -1816,6 +1821,12 @@ HTML_TEMPLATE = """
                                 <span class="text-muted"> / </span>
                                 <span class="text-danger">${etf.ask_price && etf.ask_price > 0 ? etf.ask_price.toFixed(2) : '—'}</span>
                             </td>
+                            <td style="font-size: 0.9em;">
+                                ${etf.bid_ask_spread_pct && etf.bid_ask_spread_pct > 0 ? 
+                                    `<span class="badge ${etf.bid_ask_spread_pct <= 0.01 ? 'bg-success' : etf.bid_ask_spread_pct <= 0.05 ? 'bg-warning' : 'bg-danger'}" title="Спред между bid и ask - показатель ликвидности">${etf.bid_ask_spread_pct.toFixed(3)}%</span>`
+                                    : '<span class="text-muted">—</span>'
+                                }
+                            </td>
                         </tr>
                     `;
                     tbody.innerHTML += row;
@@ -1824,7 +1835,7 @@ HTML_TEMPLATE = """
             } catch (error) {
                 console.error('Ошибка загрузки таблицы:', error);
                 document.querySelector('#etf-table tbody').innerHTML = 
-                    '<tr><td colspan="9" class="text-center text-danger">Ошибка загрузки данных</td></tr>';
+                    '<tr><td colspan="10" class="text-center text-danger">Ошибка загрузки данных</td></tr>';
             }
         }
 
@@ -3141,6 +3152,7 @@ def api_table():
             'return_3m': 'return_3m',
             'bid_price': 'bid_price',
             'ask_price': 'ask_price',
+            'bid_ask_spread_pct': 'bid_ask_spread_pct',
             'price': 'real_unit_price',
             'volume': 'avg_daily_volume',
             'mgmt_fee': 'management_fee',
