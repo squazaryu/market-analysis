@@ -554,10 +554,32 @@ HTML_TEMPLATE = """
         <div class="row mb-4">
             <div class="col-12">
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <h5>📊 График риск-доходность</h5>
+                        <div class="btn-group" role="group" aria-label="Фильтры по уровню риска">
+                            <button type="button" class="btn btn-outline-primary btn-sm risk-filter-btn active" data-risk="all">
+                                Все фонды
+                            </button>
+                            <button type="button" class="btn btn-outline-success btn-sm risk-filter-btn" data-risk="low">
+                                🛡️ Низкий риск
+                            </button>
+                            <button type="button" class="btn btn-outline-warning btn-sm risk-filter-btn" data-risk="medium">
+                                ⚖️ Средний риск
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm risk-filter-btn" data-risk="high">
+                                🔥 Высокий риск
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
+                        <div class="mb-2">
+                            <small class="text-muted">
+                                💡 <strong>Классификация риска:</strong> основана на волатильности и типе активов. 
+                                <strong>Низкий риск:</strong> денежный рынок, гособлигации (< 10% волатильность). 
+                                <strong>Средний риск:</strong> корпоративные облигации, смешанные фонды (10-20%). 
+                                <strong>Высокий риск:</strong> акции, развивающиеся рынки (> 20%).
+                            </small>
+                        </div>
                         <div id="risk-return-plot" style="height: 700px;">
                             <div class="text-center py-5">
                                 <div class="spinner-border text-primary" role="status"></div>
@@ -1559,12 +1581,16 @@ HTML_TEMPLATE = """
             }
         }
 
-        // Загрузка графика
-        async function loadChart() {
-            console.log('Загружаем основной график риск-доходность...');
+        // Текущий фильтр риска
+        let currentRiskFilter = 'all';
+        
+        // Загрузка графика с фильтром по риску
+        async function loadChart(riskLevel = 'all') {
+            console.log(`Загружаем график риск-доходность с фильтром: ${riskLevel}...`);
             
             try {
-                const response = await fetch('/api/chart');
+                const url = riskLevel === 'all' ? '/api/chart' : `/api/chart?risk_level=${riskLevel}`;
+                const response = await fetch(url);
                 console.log('Ответ API chart:', response.status);
                 
                 const data = await response.json();
@@ -1579,6 +1605,7 @@ HTML_TEMPLATE = """
                 
                 if (data.data && data.layout) {
                     console.log('Создаем график риск-доходность');
+                    document.getElementById('risk-return-plot').innerHTML = '';
                     Plotly.newPlot('risk-return-plot', data.data, data.layout, {responsive: true});
                     console.log('График риск-доходность создан успешно');
                     
@@ -1598,6 +1625,49 @@ HTML_TEMPLATE = """
                 document.getElementById('risk-return-plot').innerHTML = 
                     `<div class="alert alert-danger">Ошибка: ${error.message}</div>`;
             }
+        }
+        
+        // Инициализация фильтров по риску
+        function initRiskFilters() {
+            const filterBtns = document.querySelectorAll('.risk-filter-btn');
+            
+            filterBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    // Убираем активный класс со всех кнопок
+                    filterBtns.forEach(b => {
+                        b.classList.remove('active');
+                        b.classList.add('btn-outline-primary', 'btn-outline-success', 'btn-outline-warning', 'btn-outline-danger');
+                        b.classList.remove('btn-primary', 'btn-success', 'btn-warning', 'btn-danger');
+                    });
+                    
+                    // Добавляем активный класс на выбранную кнопку
+                    this.classList.add('active');
+                    const riskLevel = this.getAttribute('data-risk');
+                    
+                    // Меняем стиль активной кнопки
+                    if (riskLevel === 'all') {
+                        this.classList.remove('btn-outline-primary');
+                        this.classList.add('btn-primary');
+                    } else if (riskLevel === 'low') {
+                        this.classList.remove('btn-outline-success');
+                        this.classList.add('btn-success');
+                    } else if (riskLevel === 'medium') {
+                        this.classList.remove('btn-outline-warning');
+                        this.classList.add('btn-warning');
+                    } else if (riskLevel === 'high') {
+                        this.classList.remove('btn-outline-danger');
+                        this.classList.add('btn-danger');
+                    }
+                    
+                    // Сохраняем текущий фильтр
+                    currentRiskFilter = riskLevel;
+                    
+                    // Перезагружаем график
+                    loadChart(riskLevel);
+                    
+                    console.log(`Выбран фильтр по риску: ${riskLevel}`);
+                });
+            });
         }
 
         // Загрузка таблицы
@@ -2066,6 +2136,10 @@ HTML_TEMPLATE = """
         // Простая рабочая инициализация
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 Инициализация дашборда...');
+            
+            // Инициализируем фильтры по риску
+            initRiskFilters();
+            console.log('✅ Фильтры по уровню риска инициализированы');
             
             // Прямая загрузка графиков без функций
             setTimeout(() => {
@@ -2817,36 +2891,140 @@ def api_stats():
     except Exception as e:
         return jsonify({'error': str(e)})
 
+def classify_risk_level(volatility, category):
+    """Классификация ETF по уровням риска на основе волатильности и категории"""
+    
+    # Базовая классификация по волатильности
+    if volatility < 10:
+        base_risk = 'low'
+    elif volatility < 20:
+        base_risk = 'medium' 
+    else:
+        base_risk = 'high'
+    
+    # Корректировка по категории (используем категории из наших данных)
+    low_risk_categories = ['денежный рынок', 'ликвидность', 'казначейские', 'государственные']
+    medium_risk_categories = ['облигации', 'корпоративные', 'смешанные', 'сбалансированные']
+    high_risk_categories = ['акции', 'технологии', 'эмерджинг', 'развивающиеся', 'малая капитализация']
+    
+    category_lower = str(category).lower()
+    
+    # Защитные активы - снижаем риск
+    if any(word in category_lower for word in low_risk_categories):
+        if base_risk == 'high':
+            return 'medium'
+        elif base_risk == 'medium':
+            return 'low'
+        return 'low'
+    
+    # Рисковые активы - повышаем риск
+    elif any(word in category_lower for word in high_risk_categories):
+        if base_risk == 'low':
+            return 'medium'
+        elif base_risk == 'medium':
+            return 'high'
+        return 'high'
+    
+    # Средние активы
+    elif any(word in category_lower for word in medium_risk_categories):
+        return base_risk
+    
+    return base_risk
+
 @app.route('/api/chart')
 def api_chart():
-    """API графика"""
+    """API графика риск-доходность"""
     if etf_data is None or len(etf_data) == 0:
         return jsonify({'error': 'Данные не загружены'})
     
     try:
-        # Простой scatter plot
-        fig_data = [{
-            'x': etf_data['volatility'].fillna(0).tolist(),
-            'y': etf_data['annual_return'].fillna(0).tolist(),
-            'text': etf_data['ticker'].tolist(),
-            'mode': 'markers',
-            'type': 'scatter',
-            'marker': {
-                'size': 8,
-                'color': etf_data['annual_return'].fillna(0).tolist(),
-                'colorscale': 'RdYlGn',
-                'showscale': True
-            }
-        }]
+        # Получаем параметры фильтрации
+        risk_filter = request.args.get('risk_level', 'all')  # all, low, medium, high
+        
+        # Добавляем классификацию по уровням риска
+        data = etf_data.copy()
+        data['risk_level'] = data.apply(lambda row: classify_risk_level(
+            row.get('volatility', 15), 
+            row.get('category', '')
+        ), axis=1)
+        
+        # Применяем фильтр
+        if risk_filter != 'all':
+            data = data[data['risk_level'] == risk_filter]
+        
+        if len(data) == 0:
+            return jsonify({'error': f'Нет данных для уровня риска: {risk_filter}'})
+        
+        # Цветовая схема по уровням риска
+        color_map = {'low': '#28a745', 'medium': '#ffc107', 'high': '#dc3545'}  # зеленый, желтый, красный
+        colors = [color_map.get(level, '#6c757d') for level in data['risk_level']]
+        
+        # Создаем данные для графика с группировкой по уровням риска
+        fig_data = []
+        
+        for risk_level in ['low', 'medium', 'high']:
+            level_data = data[data['risk_level'] == risk_level]
+            if len(level_data) > 0:
+                risk_labels = {'low': 'Низкий риск', 'medium': 'Средний риск', 'high': 'Высокий риск'}
+                
+                fig_data.append({
+                    'x': level_data['volatility'].fillna(0).tolist(),
+                    'y': level_data['annual_return'].fillna(0).tolist(),
+                    'text': level_data['ticker'].tolist(),
+                    'customdata': [f"{ticker}<br>Категория: {category}<br>СЧА: {nav:.1f} млрд ₽" 
+                                 for ticker, category, nav in zip(
+                                     level_data['ticker'], 
+                                     level_data['category'].fillna('Не указана'),
+                                     level_data.get('nav_billions', level_data.get('market_cap', pd.Series([0]*len(level_data)))).fillna(0)
+                                 )],
+                    'mode': 'markers',
+                    'type': 'scatter',
+                    'name': risk_labels[risk_level],
+                    'marker': {
+                        'size': 10,
+                        'color': color_map[risk_level],
+                        'line': {'width': 1, 'color': 'white'},
+                        'opacity': 0.8
+                    },
+                    'hovertemplate': '<b>%{customdata}</b><br>' +
+                                   'Доходность: %{y:.1f}%<br>' +
+                                   'Волатильность: %{x:.1f}%<br>' +
+                                   f'<i>{risk_labels[risk_level]}</i>' +
+                                   '<extra></extra>'
+                })
+        
+        # Если данных нет ни в одной категории, показываем все без группировки
+        if not fig_data:
+            fig_data = [{
+                'x': data['volatility'].fillna(0).tolist(),
+                'y': data['annual_return'].fillna(0).tolist(),
+                'text': data['ticker'].tolist(),
+                'mode': 'markers',
+                'type': 'scatter',
+                'marker': {
+                    'size': 8,
+                    'color': data['annual_return'].fillna(0).tolist(),
+                    'colorscale': 'RdYlGn',
+                    'showscale': True
+                }
+            }]
+        
+        title_suffix = ''
+        if risk_filter != 'all':
+            risk_labels = {"low": "Низкий риск", "medium": "Средний риск", "high": "Высокий риск"}
+            title_suffix = f' - {risk_labels.get(risk_filter, risk_filter)}'
         
         layout = {
-            'title': 'Риск vs Доходность',
+            'title': f'Риск vs Доходность{title_suffix}',
             'xaxis': {'title': 'Волатильность (%)'},
             'yaxis': {'title': 'Годовая доходность (%)'},
-            'hovermode': 'closest'
+            'hovermode': 'closest',
+            'showlegend': len(fig_data) > 1,
+            'legend': {'x': 1.02, 'y': 1}
         }
         
         return jsonify({'data': fig_data, 'layout': layout})
+        
     except Exception as e:
         print(f"Ошибка в api_chart: {e}")
         return jsonify({'error': str(e)})
@@ -3074,6 +3252,18 @@ def api_table():
                 'ask_price': round(fund.get('ask_price', 0), 4),
                 'volume_rub': int(fund.get('volume_rub', 0))
             }
+            
+            # Рассчитываем разницу bid-ask в процентах
+            bid = fund_data['bid_price']
+            ask = fund_data['ask_price'] 
+            
+            if bid > 0 and ask > 0 and ask >= bid:
+                # Спред = (ask - bid) / ((ask + bid) / 2) * 100
+                mid_price = (ask + bid) / 2
+                bid_ask_spread = ((ask - bid) / mid_price) * 100
+                fund_data['bid_ask_spread_pct'] = round(bid_ask_spread, 3)
+            else:
+                fund_data['bid_ask_spread_pct'] = 0
             
             table_data.append(fund_data)
         
