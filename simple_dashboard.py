@@ -793,17 +793,58 @@ HTML_TEMPLATE = """
                         <!-- Информационный блок -->
                         <div class="collapse mt-3" id="correlationInfo">
                             <div class="card card-body bg-light">
-                                <h6><i class="fas fa-calculator me-2"></i>Как рассчитывается корреляция:</h6>
-                                <ul class="mb-2">
-                                    <li><strong>Коэффициент Пирсона</strong> - измеряет линейную связь между показателями фондов</li>
-                                    <li><strong>Диапазон от -1 до +1:</strong> -1 (обратная связь), 0 (нет связи), +1 (прямая связь)</li>
-                                    <li><strong>Источник данных:</strong> реальные показатели с сайта InvestFunds.ru</li>
-                                </ul>
+                                <h6><i class="fas fa-calculator me-2"></i>Как работает корреляция в инвестициях:</h6>
+                                
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <h6>📊 Что это такое:</h6>
+                                        <ul class="small">
+                                            <li><strong>Коэффициент Пирсона</strong> - измеряет связь между движениями фондов</li>
+                                            <li><strong>Диапазон -1 до +1:</strong> показывает силу и направление связи</li>
+                                            <li><strong>P-value</strong> - статистическая значимость (< 0.05 = надежная связь)</li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6>💡 Практические примеры:</h6>
+                                        <div class="small">
+                                            <div class="mb-1"><strong>+0.9:</strong> Два фонда акций растут и падают вместе</div>
+                                            <div class="mb-1"><strong>0.0:</strong> Фонд золота не зависит от IT-акций</div>
+                                            <div class="mb-1"><strong>-0.7:</strong> Облигации растут, когда акции падают</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <h6>🎯 Как использовать для диверсификации:</h6>
+                                <div class="row small mb-3">
+                                    <div class="col-md-4">
+                                        <div class="alert alert-success py-2 mb-1">
+                                            <strong>✅ Хорошо:</strong> Корреляция < 0.3<br>
+                                            <small>Фонды двигаются независимо → снижение риска</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="alert alert-warning py-2 mb-1">
+                                            <strong>⚠️ Осторожно:</strong> Корреляция 0.3-0.7<br>
+                                            <small>Частичная зависимость → умеренный риск</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="alert alert-danger py-2 mb-1">
+                                            <strong>❌ Плохо:</strong> Корреляция > 0.7<br>
+                                            <small>Фонды движутся синхронно → высокий риск</small>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="row text-center">
-                                    <div class="col-3"><span class="badge" style="background-color: #67001f; color: white;">0.8-1.0 Сильная связь</span></div>
-                                    <div class="col-3"><span class="badge" style="background-color: #d6604d; color: white;">0.5-0.8 Умеренная связь</span></div>
-                                    <div class="col-3"><span class="badge" style="background-color: #f7f7f7; color: black;">0.0-0.5 Слабая связь</span></div>
-                                    <div class="col-3"><span class="badge" style="background-color: #4393c3; color: white;">-0.5-0.0 Обратная связь</span></div>
+                                    <div class="col-3"><span class="badge" style="background-color: #67001f; color: white; font-size: 11px;">+0.8 до +1.0<br>Сильная прямая связь</span></div>
+                                    <div class="col-3"><span class="badge" style="background-color: #d6604d; color: white; font-size: 11px;">+0.3 до +0.8<br>Умеренная связь</span></div>
+                                    <div class="col-3"><span class="badge" style="background-color: #f7f7f7; color: black; font-size: 11px;">-0.3 до +0.3<br>Слабая связь</span></div>
+                                    <div class="col-3"><span class="badge" style="background-color: #4393c3; color: white; font-size: 11px;">-1.0 до -0.3<br>Обратная связь</span></div>
+                                </div>
+
+                                <div class="mt-2 small text-muted">
+                                    <strong>Источник данных:</strong> реальные показатели с InvestFunds.ru
                                 </div>
                             </div>
                         </div>
