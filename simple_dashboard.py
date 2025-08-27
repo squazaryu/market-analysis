@@ -367,6 +367,24 @@ HTML_TEMPLATE = """
             margin-bottom: 0;
             font-weight: 600;
         }
+
+        /* Минимальная высота для графиков в accordion */
+        .accordion-body [id$="-plot"],
+        .accordion-body [id*="plot"] {
+            min-height: 500px !important;
+        }
+        
+        /* Специальные настройки для больших графиков */
+        #risk-return-plot,
+        #performance-analysis-plot,
+        #sector-analysis-plot {
+            min-height: 600px !important;
+        }
+
+        /* Убираем ограничения высоты для accordion body */
+        .accordion-body {
+            max-height: none !important;
+        }
         
         /* Стиль для select периода доходности */
         #return-period-selector {
@@ -433,13 +451,15 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Временные фильтры -->
-        <div class="row mb-4" id="temporal-section">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5>⏱️ Временной анализ рынка БПИФ</h5>
-                    </div>
-                    <div class="card-body">
+        <div class="accordion mb-4" id="temporalAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#temporalAnalysis" aria-expanded="false">
+                        <h5 class="mb-0">⏱️ Временной анализ рынка БПИФ</h5>
+                    </button>
+                </h2>
+                <div id="temporalAnalysis" class="accordion-collapse collapse" data-bs-parent="#temporalAccordion">
+                    <div class="accordion-body">
                         <!-- Информация о данных -->
                         <div class="row mb-3">
                             <div class="col-12">
@@ -533,13 +553,18 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Функциональные кнопки -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <h5>🎛️ Управление графиками</h5>
-                    </div>
-                    <div class="card-body">
+        <div class="accordion mb-4" id="controlsAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#dashboardControls" aria-expanded="false">
+                        <h5 class="mb-0">🎛️ Управление дашбордом</h5>
+                    </button>
+                </h2>
+                <div id="dashboardControls" class="accordion-collapse collapse" data-bs-parent="#controlsAccordion">
+                    <div class="accordion-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>🎛️ Управление графиками</h6>
                         <div class="btn-group me-2" role="group">
                             <button class="btn btn-outline-primary active" onclick="toggleChart('scatter', this)">
                                 <i class="fas fa-circle me-1"></i>Scatter
@@ -563,15 +588,9 @@ HTML_TEMPLATE = """
                         <button class="btn btn-success" onclick="fixGraphics()">
                             <i class="fas fa-magic me-1"></i>Исправить отображение
                         </button>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <h5>📊 Фильтры рекомендаций</h5>
-                    </div>
-                    <div class="card-body">
+                            </div>
+                            <div class="col-md-6">
+                                <h6>📊 Фильтры рекомендаций</h6>
                         <div class="btn-group" role="group">
                             <button class="btn btn-outline-success" onclick="filterRecs('conservative', this)">
                                 <i class="fas fa-shield-alt me-1"></i>Консерв.
@@ -586,19 +605,23 @@ HTML_TEMPLATE = """
                                 <i class="fas fa-list me-1"></i>Все
                             </button>
                         </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Рекомендации -->
-        <div class="row mb-4" id="recommendations-section">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5>💡 Инвестиционные рекомендации</h5>
-                    </div>
-                    <div class="card-body">
+        <div class="accordion mb-4" id="recommendationsAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#investmentRecommendations" aria-expanded="false">
+                        <h5 class="mb-0">💡 Инвестиционные рекомендации</h5>
+                    </button>
+                </h2>
+                <div id="investmentRecommendations" class="accordion-collapse collapse" data-bs-parent="#recommendationsAccordion">
+                    <div class="accordion-body">
                         <div id="recommendations-content">
                             <div class="text-center py-3">
                                 <div class="spinner-border text-primary" role="status"></div>
@@ -611,13 +634,15 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Детальная статистика -->
-        <div class="row mb-4" id="detailed-stats-section">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5>📈 Детальная статистика рынка</h5>
-                    </div>
-                    <div class="card-body">
+        <div class="accordion mb-4" id="detailedStatsAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#detailedStatistics" aria-expanded="false">
+                        <h5 class="mb-0">📈 Детальная статистика рынка</h5>
+                    </button>
+                </h2>
+                <div id="detailedStatistics" class="accordion-collapse collapse" data-bs-parent="#detailedStatsAccordion">
+                    <div class="accordion-body">
                         <div id="detailed-stats-content">
                             <div class="text-center py-3">
                                 <div class="spinner-border text-primary" role="status"></div>
@@ -630,15 +655,17 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- График риск-доходность -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="row align-items-center">
-                            <div class="col-md-4">
-                                <h5 class="mb-0">📊 График риск-доходность</h5>
-                            </div>
-                            <div class="col-md-8">
+        <div class="accordion mb-4" id="riskReturnAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#riskReturnChart" aria-expanded="false">
+                        <h5 class="mb-0">📊 График риск-доходность</h5>
+                    </button>
+                </h2>
+                <div id="riskReturnChart" class="accordion-collapse collapse" data-bs-parent="#riskReturnAccordion">
+                    <div class="accordion-body">
+                        <div class="row align-items-center mb-3">
+                            <div class="col-md-12">
                                 <div class="d-flex justify-content-end align-items-center gap-3">
                                     <!-- Селектор периода -->
                                     <div class="d-flex align-items-center">
@@ -692,11 +719,16 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Секторальный анализ -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5>🏢 Упрощенная классификация БПИФ (5 типов активов)</h5>
+        <div class="accordion mb-4" id="sectorAnalysisAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sectorAnalysisChart" aria-expanded="false">
+                        <h5 class="mb-0">🏢 Упрощенная классификация БПИФ (5 типов активов)</h5>
+                    </button>
+                </h2>
+                <div id="sectorAnalysisChart" class="accordion-collapse collapse" data-bs-parent="#sectorAnalysisAccordion">
+                    <div class="accordion-body">
+                        <div class="mb-3">
                         <div class="row align-items-center mt-2">
                             <div class="col-md-6">
                                 <div class="btn-group btn-group-sm" role="group">
@@ -731,6 +763,9 @@ HTML_TEMPLATE = """
                                         <button type="button" class="btn btn-outline-info" id="view-returns-btn" onclick="switchDataView('returns', this)">
                                             <i class="fas fa-percentage me-1"></i>По доходности
                                         </button>
+                                        <button type="button" class="btn btn-outline-warning" id="view-nav-btn" onclick="switchDataView('nav', this)">
+                                            <i class="fas fa-money-bill-wave me-1"></i>По СЧА
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -739,8 +774,7 @@ HTML_TEMPLATE = """
                             <i class="fas fa-info-circle me-1"></i>
                             Упрощенная классификация по 5 основным типам активов: <strong>Акции</strong>, <strong>Облигации</strong>, <strong>Деньги</strong>, <strong>Сырье</strong>, <strong>Смешанные</strong>. Кликните по категории для просмотра списка фондов.
                         </small>
-                    </div>
-                    <div class="card-body">
+                        </div>
                         <div id="sector-analysis-plot" style="height: 700px;">
                             <!-- Спиннер будет добавлен через JS -->
                         </div>
@@ -750,15 +784,17 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Корреляционная матрица -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="row align-items-center">
-                            <div class="col-md-4">
-                                <h5 class="mb-0">🔗 Корреляционная матрица ETF</h5>
-                            </div>
-                            <div class="col-md-8">
+        <div class="accordion mb-4" id="correlationAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#correlationMatrix" aria-expanded="false">
+                        <h5 class="mb-0">🔗 Корреляционная матрица ETF</h5>
+                    </button>
+                </h2>
+                <div id="correlationMatrix" class="accordion-collapse collapse" data-bs-parent="#correlationAccordion">
+                    <div class="accordion-body">
+                        <div class="row align-items-center mb-3">
+                            <div class="col-md-12">
                                 <div class="d-flex justify-content-end align-items-center gap-3">
                                     <!-- Тип данных для корреляции -->
                                     <div class="d-flex align-items-center">
@@ -859,13 +895,15 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Анализ доходности -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5>📊 Анализ доходности: лидеры vs аутсайдеры</h5>
-                    </div>
-                    <div class="card-body">
+        <div class="accordion mb-4" id="performanceAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#performanceAnalysis" aria-expanded="false">
+                        <h5 class="mb-0">📊 Анализ доходности: лидеры vs аутсайдеры</h5>
+                    </button>
+                </h2>
+                <div id="performanceAnalysis" class="accordion-collapse collapse" data-bs-parent="#performanceAccordion">
+                    <div class="accordion-body">
                         <div id="performance-analysis-plot" style="height: 700px;">
                             <div class="text-center py-5">
                                 <div class="spinner-border text-primary" role="status"></div>
@@ -878,13 +916,15 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Потоки капитала -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5><i class="fas fa-exchange-alt me-2"></i>Реальные потоки капитала по типам активов</h5>
-                    </div>
-                    <div class="card-body">
+        <div class="accordion mb-4" id="capitalFlowsAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#capitalFlows" aria-expanded="false">
+                        <h5 class="mb-0"><i class="fas fa-exchange-alt me-2"></i>Реальные потоки капитала по типам активов</h5>
+                    </button>
+                </h2>
+                <div id="capitalFlows" class="accordion-collapse collapse" data-bs-parent="#capitalFlowsAccordion">
+                    <div class="accordion-body">
                         <div id="capital-flows-plot" style="height: 600px;">
                             <div class="text-center py-5">
                                 <div class="spinner-border text-primary" role="status"></div>
@@ -897,13 +937,15 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Рыночные настроения -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5><i class="fas fa-tachometer-alt me-2"></i>Индикатор рыночных настроений</h5>
-                    </div>
-                    <div class="card-body">
+        <div class="accordion mb-4" id="sentimentAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#marketSentiment" aria-expanded="false">
+                        <h5 class="mb-0"><i class="fas fa-tachometer-alt me-2"></i>Индикатор рыночных настроений</h5>
+                    </button>
+                </h2>
+                <div id="marketSentiment" class="accordion-collapse collapse" data-bs-parent="#sentimentAccordion">
+                    <div class="accordion-body">
                         <div class="row">
                             <div class="col-md-8">
                                 <div id="market-sentiment-plot" style="height: 500px;">
@@ -928,13 +970,65 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Моментум секторов -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5><i class="fas fa-rocket me-2"></i>Анализ моментума секторов</h5>
-                    </div>
-                    <div class="card-body">
+        <div class="accordion mb-4" id="momentumAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sectorMomentum" aria-expanded="false">
+                        <h5 class="mb-0"><i class="fas fa-rocket me-2"></i>Анализ моментума секторов</h5>
+                    </button>
+                </h2>
+                <div id="sectorMomentum" class="accordion-collapse collapse" data-bs-parent="#momentumAccordion">
+                    <div class="accordion-body">
+                        <!-- Информационный блок -->
+                        <div class="accordion mb-3" id="momentumInfo">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#momentumExplanation">
+                                        <i class="fas fa-info-circle me-2"></i>Что показывает анализ моментума?
+                                    </button>
+                                </h2>
+                                <div id="momentumExplanation" class="accordion-collapse collapse" data-bs-parent="#momentumInfo">
+                                    <div class="accordion-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <h6><i class="fas fa-chart-line me-2"></i>Как рассчитывается моментум?</h6>
+                                                <p><strong>Индекс моментума</strong> включает три компонента:</p>
+                                                <ul>
+                                                    <li><strong>Доходность (×2)</strong> - основной фактор роста</li>
+                                                    <li><strong>Размер рынка</strong> - общая СЧА всех фондов типа</li>
+                                                    <li><strong>Стабильность</strong> - низкая волатильность даёт бонус</li>
+                                                </ul>
+                                                <p class="small text-muted">Формула: Моментум = Доходность×2 + min(СЧА/10, 20) + max(20-Волатильность, -10)</p>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <h6><i class="fas fa-palette me-2"></i>Цветовая схема трендов:</h6>
+                                                <div class="mb-2">
+                                                    <span class="badge" style="background-color: #2E8B57;">Сильный рост</span> - моментум > 15
+                                                </div>
+                                                <div class="mb-2">
+                                                    <span class="badge" style="background-color: #90EE90; color: #000;">Умеренный рост</span> - моментум 5-15
+                                                </div>
+                                                <div class="mb-2">
+                                                    <span class="badge" style="background-color: #FFA500;">Стабильность</span> - моментум -5 до 5
+                                                </div>
+                                                <div class="mb-2">
+                                                    <span class="badge" style="background-color: #FFA07A; color: #000;">Умеренное падение</span> - моментум -15 до -5
+                                                </div>
+                                                <div>
+                                                    <span class="badge" style="background-color: #DC143C;">Сильное падение</span> - моментум < -15
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="alert alert-info mt-3">
+                                            <i class="fas fa-lightbulb me-2"></i><strong>Как использовать:</strong> 
+                                            Типы активов в правом верхнем углу графика показывают наилучшие перспективы роста. 
+                                            Размер пузырька показывает размер рынка - большие пузыри означают более ликвидные рынки.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div id="sector-momentum-plot" style="height: 600px;">
                             <div class="text-center py-5">
                                 <div class="spinner-border text-primary" role="status"></div>
@@ -947,13 +1041,15 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Перетоки между фондами -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5><i class="fas fa-arrows-alt-h me-2"></i>Перетоки между фондами</h5>
-                    </div>
-                    <div class="card-body">
+        <div class="accordion mb-4" id="flowsAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#fundFlows" aria-expanded="false">
+                        <h5 class="mb-0"><i class="fas fa-arrows-alt-h me-2"></i>Перетоки между фондами</h5>
+                    </button>
+                </h2>
+                <div id="fundFlows" class="accordion-collapse collapse" data-bs-parent="#flowsAccordion">
+                    <div class="accordion-body">
                         <div id="fund-flows-plot" style="height: 700px;">
                             <div class="text-center py-5">
                                 <div class="spinner-border text-primary" role="status"></div>
@@ -966,13 +1062,15 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Ротация секторов -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5><i class="fas fa-sync-alt me-2"></i>Ротация секторов (приток/отток фондов)</h5>
-                    </div>
-                    <div class="card-body">
+        <div class="accordion mb-4" id="rotationAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sectorRotation" aria-expanded="false">
+                        <h5 class="mb-0"><i class="fas fa-sync-alt me-2"></i>Ротация секторов (приток/отток фондов)</h5>
+                    </button>
+                </h2>
+                <div id="sectorRotation" class="accordion-collapse collapse" data-bs-parent="#rotationAccordion">
+                    <div class="accordion-body">
                         <div id="sector-rotation-plot" style="height: 600px;">
                             <div class="text-center py-5">
                                 <div class="spinner-border text-primary" role="status"></div>
@@ -985,13 +1083,15 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Детальные составы фондов -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5><i class="fas fa-layer-group me-2"></i>Детальная структура фондов по составам</h5>
-                    </div>
-                    <div class="card-body">
+        <div class="accordion mb-4" id="compositionsAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#detailedCompositions" aria-expanded="false">
+                        <h5 class="mb-0"><i class="fas fa-layer-group me-2"></i>Детальная структура фондов по составам</h5>
+                    </button>
+                </h2>
+                <div id="detailedCompositions" class="accordion-collapse collapse" data-bs-parent="#compositionsAccordion">
+                    <div class="accordion-body">
                         <div class="row">
                             <div class="col-md-8">
                                 <div id="detailed-compositions-plot" style="height: 600px;">
@@ -1016,15 +1116,17 @@ HTML_TEMPLATE = """
         </div>
 
         <!-- Таблица -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="row align-items-center">
-                            <div class="col-md-3">
-                                <h5 class="mb-0">📋 Все ETF фонды</h5>
-                            </div>
-                            <div class="col-md-9">
+        <div class="accordion mb-4" id="tableAccordion">
+            <div class="accordion-item border-0 shadow-sm">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#etfTable" aria-expanded="false">
+                        <h5 class="mb-0">📋 Все ETF фонды</h5>
+                    </button>
+                </h2>
+                <div id="etfTable" class="accordion-collapse collapse" data-bs-parent="#tableAccordion">
+                    <div class="accordion-body">
+                        <div class="row align-items-center mb-3">
+                            <div class="col-md-12">
                                 <div class="row g-2">
                                     <div class="col-md-3">
                                         <select class="form-select form-select-sm" id="table-limit" onchange="updateTable()">
@@ -1571,7 +1673,7 @@ HTML_TEMPLATE = """
         
         function switchDataView(viewType, buttonElement) {
             // Обновляем активную кнопку
-            const buttons = document.querySelectorAll('#view-funds-btn, #view-returns-btn');
+            const buttons = document.querySelectorAll('#view-funds-btn, #view-returns-btn, #view-nav-btn');
             buttons.forEach(btn => btn.classList.remove('active'));
             
             buttonElement.classList.add('active');
@@ -3165,6 +3267,12 @@ HTML_TEMPLATE = """
                       document.getElementById('risk-return-plot').innerHTML = '';
                       Plotly.newPlot('risk-return-plot', data.data, data.layout, {responsive: true});
                       console.log('✅ График риск-доходность загружен');
+                      
+                      // Принудительное обновление размера
+                      setTimeout(() => {
+                        Plotly.Plots.resize('risk-return-plot');
+                        console.log('🔧 Размер графика риск-доходность обновлен');
+                      }, 500);
                     }
                   })
                   .catch(error => {
@@ -3407,8 +3515,77 @@ HTML_TEMPLATE = """
                 if (typeof loadRecommendations === 'function') loadRecommendations();
                 if (typeof loadDetailedStats === 'function') loadDetailedStats();
                 
+                // Добавляем event listeners для accordions - загружать контент при открытии
+                const accordions = [
+                    { id: 'temporalAnalysis', loadFunction: () => { console.log('Временной анализ открыт'); } },
+                    { id: 'dashboardControls', loadFunction: () => { console.log('Управление открыто'); } },
+                    { id: 'investmentRecommendations', loadFunction: () => { if (typeof loadRecommendations === 'function') loadRecommendations(); } },
+                    { id: 'detailedStatistics', loadFunction: () => { if (typeof loadDetailedStats === 'function') loadDetailedStats(); } },
+                    { id: 'riskReturnChart', loadFunction: () => { console.log('График риск-доходность открыт'); } },
+                    { id: 'sectorAnalysisChart', loadFunction: () => { loadSimplifiedSectorAnalysis('level1'); } },
+                    { id: 'correlationMatrix', loadFunction: loadCorrelationMatrix },
+                    { id: 'capitalFlows', loadFunction: () => {} }, // Уже загружается автоматически
+                    { id: 'performanceAnalysis', loadFunction: loadPerformanceAnalysis },
+                    { id: 'marketSentiment', loadFunction: () => {} }, // Уже загружается автоматически
+                    { id: 'sectorMomentum', loadFunction: () => {} }, // Уже загружается автоматически  
+                    { id: 'fundFlows', loadFunction: () => {} }, // Уже загружается автоматически
+                    { id: 'sectorRotation', loadFunction: () => {} }, // Уже загружается автоматически
+                    { id: 'detailedCompositions', loadFunction: () => {} }, // Уже загружается автоматически
+                    { id: 'etfTable', loadFunction: () => { if (typeof loadTable === 'function') loadTable(); } }
+                ];
+
+                accordions.forEach(accordion => {
+                    const element = document.getElementById(accordion.id);
+                    if (element) {
+                        element.addEventListener('shown.bs.collapse', function () {
+                            console.log(`📂 Открыт accordion: ${accordion.id}`);
+                            if (accordion.loadFunction) {
+                                accordion.loadFunction();
+                            }
+                            
+                            // Исправляем размеры Plotly графиков после открытия accordion
+                            setTimeout(() => {
+                                resizeAllPlots();
+                            }, 500); // Даем время accordion'у полностью развернуться
+                        });
+                    }
+                });
+                
             }, 1000); // Задержка 1 секунда для загрузки всех скриптов
 
+        });
+
+        // Функция для правильного обновления размеров всех графиков
+        function resizeAllPlots() {
+            const plotIds = [
+                'risk-return-plot',
+                'sector-analysis-plot', 
+                'correlation-matrix-plot',
+                'performance-analysis-plot',
+                'market-sentiment-plot',
+                'sector-momentum-plot',
+                'fund-flows-plot',
+                'sector-rotation-plot',
+                'detailed-compositions-plot',
+                'capital-flows-plot'
+            ];
+            
+            plotIds.forEach(plotId => {
+                const element = document.getElementById(plotId);
+                if (element && window.Plotly && element.data) {
+                    try {
+                        window.Plotly.Plots.resize(element);
+                        console.log(`🔧 Обновлен размер графика: ${plotId}`);
+                    } catch (e) {
+                        console.log(`⚠️ Не удалось обновить размер графика ${plotId}:`, e);
+                    }
+                }
+            });
+        }
+
+        // Добавляем обработчик изменения размера окна
+        window.addEventListener('resize', () => {
+            setTimeout(resizeAllPlots, 100);
         });
 
         // Функции для временного анализа
@@ -5348,8 +5525,8 @@ def api_sector_momentum():
         returns = [r['avg_return'] for r in momentum_results]
         colors = [r['color'] for r in momentum_results]
         
-        # Размер пузырьков пропорционален СЧА
-        sizes = [min(max(r['total_nav'] * 2, 10), 50) for r in momentum_results]
+        # Размер пузырьков пропорционален СЧА - делаем больше для лучшего отображения текста
+        sizes = [min(max(r['total_nav'] * 3, 30), 80) for r in momentum_results]
         
         # Hover информация
         hover_texts = []
@@ -5377,7 +5554,7 @@ def api_sector_momentum():
                 'line': {'width': 2, 'color': 'white'}
             },
             'textposition': 'middle center',
-            'textfont': {'size': 10, 'color': 'white'},
+            'textfont': {'size': 12, 'color': 'white', 'family': 'Arial, sans-serif'},
             'type': 'scatter',
             'name': 'Типы активов'
         }]

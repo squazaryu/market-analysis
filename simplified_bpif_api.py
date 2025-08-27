@@ -134,6 +134,10 @@ def get_level1_analysis(view_type, period='1y'):
             period_label = get_period_label(period)
             y_title = f'Средняя доходность {period_label} (%)'
             bar_text = [f"{val:.1f}%" for val in y_values]
+        elif view_type == 'nav':
+            y_values = grouped['total_nav'].tolist()
+            y_title = 'Общая СЧА (млрд ₽)'
+            bar_text = [f"{val:.1f} млрд ₽" for val in y_values]
         else:  # funds
             y_values = grouped['funds_count'].tolist()
             y_title = 'Количество фондов'
@@ -169,12 +173,13 @@ def get_level1_analysis(view_type, period='1y'):
                 'customdata': list(zip(
                     grouped['avg_return'].tolist(),
                     grouped['funds_count'].tolist(), 
-                    (grouped['total_nav'] / 1000).tolist()  # В млрд
+                    grouped['total_nav'].tolist()  # Уже в млрд
                 ))
             }],
             'layout': {
                 'title': {
-                    'text': f'Упрощенная классификация БПИФ по типам активов',
+                    'text': f'Упрощенная классификация БПИФ по типам активов' + 
+                            (f' ({period_label})' if view_type == 'returns' else ''),
                     'x': 0.5,
                     'font': {'size': 16}
                 },
