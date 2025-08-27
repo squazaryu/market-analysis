@@ -19,6 +19,11 @@ from temporal_analysis_engine import TemporalAnalysisEngine, MarketPeriod, TimeF
 from historical_data_manager import HistoricalDataManager
 from full_fund_compositions import get_fund_category
 from auto_fund_classifier import classify_fund_by_name
+from bpif_3level_classifier import BPIF3LevelClassifier
+from improved_bpif_classifier import ImprovedBPIFClassifier
+from bpif_3level_api import register_3level_api
+from improved_bpif_api import register_improved_api
+from simplified_bpif_api import simplified_bpif_bp
 
 app = Flask(__name__)
 
@@ -48,6 +53,8 @@ def convert_to_json_serializable(obj):
 etf_data = None
 capital_flow_analyzer = None
 temporal_engine = None
+bpif_classifier = None
+improved_bpif_classifier = None
 historical_manager = None
 
 def prepare_analyzer_data(data):
@@ -219,7 +226,7 @@ def create_initial_data():
 # Загружаем данные при импорте модуля
 def load_etf_data():
     """Загружает данные ETF и инициализирует анализаторы"""
-    global etf_data, capital_flow_analyzer, temporal_engine, historical_manager
+    global etf_data, capital_flow_analyzer, temporal_engine, historical_manager, bpif_classifier, improved_bpif_classifier
     
     try:
         # Ищем последние файлы
@@ -258,9 +265,12 @@ def load_etf_data():
         analyzer_data = prepare_analyzer_data(etf_data)
         capital_flow_analyzer = CapitalFlowAnalyzer(analyzer_data, historical_manager)
         temporal_engine = TemporalAnalysisEngine(etf_data, historical_manager)
+        bpif_classifier = BPIF3LevelClassifier()
+        improved_bpif_classifier = ImprovedBPIFClassifier()
         
         print(f"✅ Загружено {len(etf_data)} ETF")
         print(f"✅ Инициализированы анализаторы")
+        
         return True
         
     except Exception as e:
@@ -292,6 +302,55 @@ HTML_TEMPLATE = """
         .positive { color: #28a745; font-weight: bold; }
         .negative { color: #dc3545; font-weight: bold; }
         .btn-working { background: #28a745; color: white; }
+        
+        /* Стили для кнопок переключения режимов */
+        .btn-outline-success.active {
+            background-color: #28a745 !important;
+            border-color: #28a745 !important;
+            color: white !important;
+        }
+        
+        .btn-outline-info.active {
+            background-color: #17a2b8 !important;
+            border-color: #17a2b8 !important;
+            color: white !important;
+        }
+        
+        .btn-outline-success:hover,
+        .btn-outline-info:hover {
+            color: white !important;
+        }
+        
+        /* Стили для кнопок переключения уровней классификации */
+        .btn-primary.active {
+            background-color: white !important;
+            border-color: #007bff !important;
+            color: #007bff !important;
+        }
+        
+        .btn-outline-secondary.active {
+            background-color: white !important;
+            border-color: #6c757d !important;
+            color: #6c757d !important;
+        }
+        
+        .btn-primary {
+            background-color: #007bff !important;
+            border-color: #007bff !important;
+            color: white !important;
+        }
+        
+        .btn-outline-secondary {
+            background-color: transparent !important;
+            border-color: #6c757d !important;
+            color: #6c757d !important;
+        }
+        
+        .btn-primary:hover,
+        .btn-outline-secondary:hover {
+            background-color: #f8f9fa !important;
+            color: #007bff !important;
+        }
         
         /* Принудительные размеры для графиков */
         .plotly-graph-div {
@@ -344,12 +403,32 @@ HTML_TEMPLATE = """
 
     <div class="container mt-4">
         <!-- Статистика -->
-        <div class="row mb-4" id="stats-section">
-            <div class="col-12 text-center">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">Загрузка...</span>
+        <div class="mb-4">
+            <div class="row align-items-center mb-3">
+                <div class="col-md-6">
+                    <h4>📊 Статистика рынка</h4>
                 </div>
-                <p class="mt-2">Загрузка статистики...</p>
+                <div class="col-md-6">
+                    <div class="d-flex justify-content-end">
+                        <label for="stats-period-filter" class="form-label me-2">Период:</label>
+                        <select class="form-select form-select-sm" id="stats-period-filter" style="width: auto;" onchange="updateStatsPeriod(this.value)">
+                            <option value="1m">1 месяц</option>
+                            <option value="3m">3 месяца</option>
+                            <option value="6m">6 месяцев</option>
+                            <option value="1y" selected>1 год</option>
+                            <option value="3y">3 года</option>
+                            <option value="5y">5 лет</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="row" id="stats-section">
+                <div class="col-12 text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
+                    <p class="mt-2">Загрузка статистики...</p>
+                </div>
             </div>
         </div>
 
@@ -554,21 +633,42 @@ HTML_TEMPLATE = """
         <div class="row mb-4">
             <div class="col-12">
                 <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5>📊 График риск-доходность</h5>
-                        <div class="btn-group" role="group" aria-label="Фильтры по уровню риска">
-                            <button type="button" class="btn btn-outline-primary btn-sm risk-filter-btn active" data-risk="all">
-                                Все фонды
-                            </button>
-                            <button type="button" class="btn btn-outline-success btn-sm risk-filter-btn" data-risk="low">
-                                🛡️ Низкий риск
-                            </button>
-                            <button type="button" class="btn btn-outline-warning btn-sm risk-filter-btn" data-risk="medium">
-                                ⚖️ Средний риск
-                            </button>
-                            <button type="button" class="btn btn-outline-danger btn-sm risk-filter-btn" data-risk="high">
-                                🔥 Высокий риск
-                            </button>
+                    <div class="card-header">
+                        <div class="row align-items-center">
+                            <div class="col-md-4">
+                                <h5 class="mb-0">📊 График риск-доходность</h5>
+                            </div>
+                            <div class="col-md-8">
+                                <div class="d-flex justify-content-end align-items-center gap-3">
+                                    <!-- Селектор периода -->
+                                    <div class="d-flex align-items-center">
+                                        <label for="chart-period-filter" class="form-label mb-0 me-2">Период:</label>
+                                        <select class="form-select form-select-sm" id="chart-period-filter" style="width: auto;" onchange="updateChartPeriod(this.value)">
+                                            <option value="1m">1 месяц</option>
+                                            <option value="3m">3 месяца</option>
+                                            <option value="6m">6 месяцев</option>
+                                            <option value="1y" selected>1 год</option>
+                                            <option value="3y">3 года</option>
+                                            <option value="5y">5 лет</option>
+                                        </select>
+                                    </div>
+                                    <!-- Фильтры по риску -->
+                                    <div class="btn-group" role="group" aria-label="Фильтры по уровню риска">
+                                        <button type="button" class="btn btn-outline-primary btn-sm risk-filter-btn active" data-risk="all">
+                                            Все фонды
+                                        </button>
+                                        <button type="button" class="btn btn-outline-success btn-sm risk-filter-btn" data-risk="low">
+                                            🛡️ Низкий риск
+                                        </button>
+                                        <button type="button" class="btn btn-outline-warning btn-sm risk-filter-btn" data-risk="medium">
+                                            ⚖️ Средний риск
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm risk-filter-btn" data-risk="high">
+                                            🔥 Высокий риск
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="card-body">
@@ -596,22 +696,53 @@ HTML_TEMPLATE = """
             <div class="col-12">
                 <div class="card">
                     <div class="card-header">
-                        <h5>🏢 Секторальный анализ <small class="text-muted">(трёхуровневая детализация: тип активов → подкатегории → фонды)</small></h5>
-                        <div class="btn-group btn-group-sm mt-2" role="group">
-                            <button type="button" class="btn btn-outline-primary active" id="sector-view-returns" onclick="switchSectorView('returns', this)">
-                                <i class="fas fa-chart-line me-1"></i>По доходности
-                            </button>
-                            <button type="button" class="btn btn-outline-info" id="sector-view-nav" onclick="switchSectorView('nav', this)">
-                                <i class="fas fa-coins me-1"></i>По СЧА
-                            </button>
+                        <h5>🏢 Улучшенная классификация БПИФ (4 уровня)</h5>
+                        <div class="row align-items-center mt-2">
+                            <div class="col-md-6">
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button type="button" class="btn btn-primary active" id="level1-btn" onclick="switchSimplifiedView('level1', this)">
+                                        <i class="fas fa-layer-group me-1"></i>Типы активов (5 категорий)
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="d-flex gap-2 float-end">
+                                    <!-- Селектор периода доходности -->
+                                    <div class="btn-group btn-group-sm" role="group" id="periodSelector" style="display: none;">
+                                        <button type="button" class="btn btn-outline-secondary active" id="period-1y-btn" onclick="switchPeriod('1y', this)">
+                                            1 год
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" id="period-3m-btn" onclick="switchPeriod('3m', this)">
+                                            3 мес
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" id="period-1m-btn" onclick="switchPeriod('1m', this)">
+                                            1 мес
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" id="period-ytd-btn" onclick="switchPeriod('ytd', this)">
+                                            YTD
+                                        </button>
+                                    </div>
+                                    
+                                    <!-- Селектор типа данных -->
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" class="btn btn-outline-success active" id="view-funds-btn" onclick="switchDataView('funds', this)">
+                                            <i class="fas fa-chart-line me-1"></i>По количеству фондов
+                                        </button>
+                                        <button type="button" class="btn btn-outline-info" id="view-returns-btn" onclick="switchDataView('returns', this)">
+                                            <i class="fas fa-percentage me-1"></i>По доходности
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
+                        <small class="text-muted mt-2 d-block">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Улучшенная четырехуровневая классификация: <strong>Классы активов</strong> → <strong>География</strong> → <strong>Стиль/Сектор</strong> → <strong>Особенности</strong>. Кликните по категории для детализации.
+                        </small>
                     </div>
                     <div class="card-body">
                         <div id="sector-analysis-plot" style="height: 700px;">
-                            <div class="text-center py-5">
-                                <div class="spinner-border text-primary" role="status"></div>
-                                <p class="mt-2">Загрузка секторального анализа...</p>
-                            </div>
+                            <!-- Спиннер будет добавлен через JS -->
                         </div>
                     </div>
                 </div>
@@ -1288,95 +1419,737 @@ HTML_TEMPLATE = """
             }
         }
 
-        // Функция переключения режима отображения секторального анализа
-        function switchSectorView(viewType, buttonElement) {
-            // Обновляем активную кнопку
-            const buttons = buttonElement.parentElement.querySelectorAll('.btn');
-            buttons.forEach(function(btn) { btn.classList.remove('active'); });
-            buttonElement.classList.add('active');
-            
-            // Сохраняем текущий режим
-            window.currentSectorView = viewType;
-            
-            if (!window.sectorRawData) {
-                showAlert('Данные ещё загружаются...', 'warning');
-                return;
-            }
-            
-            // Создаем новые данные для графика
-            const rawData = window.sectorRawData;
-            const assetGroups = rawData.data[0].x;
-            
-            let yValues, yTitle, chartTitle;
-            
-            if (viewType === 'returns') {
-                yValues = rawData.data[0].y; // Доходность
-                yTitle = 'Средняя доходность (%)';
-                chartTitle = '🏢 Анализ по типам активов - Доходность (кликните для детализации)';
-            } else {
-                // Получаем данные по СЧА из summary или пересчитываем
-                yValues = [];
-                for (let i = 0; i < assetGroups.length; i++) {
-                    const assetGroup = assetGroups[i];
-                    let totalNav = 0;
-                    
-                    // Суммируем СЧА по всем подкатегориям в группе
-                    if (rawData.detailed_data[assetGroup]) {
-                        totalNav = rawData.detailed_data[assetGroup].nav_totals.reduce(function(sum, nav) { return sum + nav; }, 0);
-                    }
-                    
-                    yValues.push(totalNav);
+        // Глобальные переменные для трёхуровневого анализа
+        let current3LevelView = 'level1';
+        let currentDataView = 'funds';
+        
+        // Загрузка трёхуровневого секторального анализа
+        async function load3LevelSectorAnalysis(level) {
+            try {
+                const response = await fetch(`/api/3level-analysis/${level}?view=${currentDataView}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
                 }
-                yTitle = 'Общая СЧА (млрд ₽)';
-                chartTitle = '🏢 Анализ по типам активов - СЧА (кликните для детализации)';
+                
+                // Очищаем контейнер от спиннера
+                document.getElementById('sector-analysis-plot').innerHTML = '';
+                
+                // Создаем график
+                Plotly.newPlot('sector-analysis-plot', data.data, data.layout, {responsive: true});
+                
+                // Сохраняем данные
+                window.current3LevelData = data;
+                current3LevelView = level;
+                
+                // Добавляем обработчик кликов для детализации категорий
+                document.getElementById('sector-analysis-plot').on('plotly_click', function(eventData) {
+                    const point = eventData.points[0];
+                    const categoryName = point.x;
+                    showCategoryDetail(level, categoryName);
+                });
+                
+                console.log(`✅ Трёхуровневый анализ загружен: ${level}`);
+                
+            } catch (error) {
+                console.error('Ошибка загрузки трёхуровневого анализа:', error);
+                document.getElementById('sector-analysis-plot').innerHTML = 
+                    `<div class="alert alert-danger">Ошибка загрузки: ${error.message}</div>`;
+            }
+        }
+        
+        // Переключение между уровнями анализа
+        function switch3LevelView(level, buttonElement) {
+            // Обновляем активную кнопку
+            const buttons = document.querySelectorAll('#level1-btn, #level2-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            buttons.forEach(btn => btn.classList.add('btn-outline-secondary'));
+            
+            buttonElement.classList.add('active');
+            buttonElement.classList.remove('btn-outline-secondary');
+            buttonElement.classList.add('btn-primary');
+            
+            // Загружаем новый уровень
+            load3LevelSectorAnalysis(level);
+        }
+        
+        // Переключение режима отображения данных
+        // Глобальные переменные для состояния (уже объявлены выше)
+        currentDataView = 'funds';
+        currentPeriod = '1y';
+        
+        function switchDataView(viewType, buttonElement) {
+            // Обновляем активную кнопку
+            const buttons = document.querySelectorAll('#view-funds-btn, #view-returns-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            
+            buttonElement.classList.add('active');
+            currentDataView = viewType;
+            
+            // Показываем/скрываем селектор периода
+            const periodSelector = document.getElementById('periodSelector');
+            if (viewType === 'returns') {
+                periodSelector.style.display = 'block';
+            } else {
+                periodSelector.style.display = 'none';
             }
             
-            // Создаем новые данные для графика
-            const newChartData = [{
-                x: assetGroups,
-                y: yValues,
-                type: 'bar',
-                name: yTitle,
-                marker: {
-                    color: viewType === 'returns' ? 
-                        ['#2E8B57', '#4169E1', '#FF6347', '#FFD700', '#8A2BE2'].slice(0, assetGroups.length) :
-                        ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'].slice(0, assetGroups.length)
-                },
-                customdata: rawData.data[0].customdata,
-                hovertemplate: '<b>%{x}</b><br>' +
-                             (viewType === 'returns' ? 'Доходность: %{y}%<br>' : 'СЧА: %{y} млрд ₽<br>') +
-                             'Фондов: %{customdata}<br>' +
-                             '<extra></extra>'
-            }];
+            // Перезагружаем упрощенную классификацию
+            loadSimplifiedSectorAnalysis('level1');
+        }
+        
+        function switchPeriod(period, buttonElement) {
+            // Обновляем активную кнопку периода
+            const buttons = document.querySelectorAll('#periodSelector button');
+            buttons.forEach(btn => {
+                btn.classList.remove('active');
+                btn.classList.add('btn-outline-secondary');
+            });
             
-            const newLayout = {
-                title: chartTitle,
-                xaxis: { title: 'Тип активов' },
-                yaxis: { title: yTitle },
-                height: 500,
-                hovermode: 'closest'
+            buttonElement.classList.add('active');
+            buttonElement.classList.remove('btn-outline-secondary');
+            currentPeriod = period;
+            
+            // Перезагружаем данные с новым периодом
+            if (currentDataView === 'returns') {
+                loadSimplifiedSectorAnalysis('level1');
+            }
+        }
+        
+        // Загрузка улучшенного секторального анализа
+        async function loadImprovedSectorAnalysis(level) {
+            try {
+                const response = await fetch(`/api/improved-analysis/${level}?view=${currentDataView}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Очищаем контейнер от спиннера
+                document.getElementById('sector-analysis-plot').innerHTML = '';
+                
+                // Создаем график
+                Plotly.newPlot('sector-analysis-plot', data.data, data.layout, {responsive: true});
+                
+                // Сохраняем данные
+                window.current3LevelData = data;
+                current3LevelView = level;
+                
+                // Добавляем обработчик кликов для детализации категорий
+                document.getElementById('sector-analysis-plot').on('plotly_click', function(eventData) {
+                    const point = eventData.points[0];
+                    const categoryName = point.x;
+                    showImprovedCategoryDetail(level, categoryName);
+                });
+                
+                console.log(`✅ Улучшенный анализ загружен: ${level}`);
+                
+            } catch (error) {
+                console.error('Ошибка загрузки улучшенного анализа:', error);
+                document.getElementById('sector-analysis-plot').innerHTML = 
+                    '<div class="alert alert-danger">Ошибка загрузки улучшенного анализа</div>';
+                showAlert(`Ошибка загрузки: ${error.message}`, 'danger');
+            }
+        }
+        
+        // Показ детализации категории для улучшенной классификации
+        async function showImprovedCategoryDetail(level, category) {
+            try {
+                // Показываем модальное окно сразу с загрузкой
+                const modal = new bootstrap.Modal(document.getElementById('categoryDetailModal'));
+                document.getElementById('categoryDetailTitle').innerHTML = 
+                    `<i class="fas fa-layer-group me-2"></i>${category} (Улучшенная классификация)`;
+                document.getElementById('categoryDetailBody').innerHTML = `
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">Загрузка данных категории...</p>
+                    </div>
+                `;
+                modal.show();
+                
+                const encodedCategory = encodeURIComponent(category);
+                const response = await fetch(`/api/improved-category-detail/${level}/${encodedCategory}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Создаем список фондов в категории
+                const funds = data.funds;
+                const stats = data.statistics;
+                
+                let fundsHtml = `
+                    <div class="alert alert-success">
+                        <h5><i class="fas fa-star me-2"></i>${category} (Улучшенная классификация)</h5>
+                        <div class="row">
+                            <div class="col-md-2"><strong>Фондов:</strong> ${stats.total_funds}</div>
+                            <div class="col-md-2"><strong>Доходность:</strong> ${stats.avg_return}%</div>
+                            <div class="col-md-2"><strong>Лучший:</strong> ${stats.best_fund}</div>
+                            <div class="col-md-2"><strong>СЧА:</strong> ${stats.total_nav} млрд ₽</div>
+                            <div class="col-md-2"><strong>Активных:</strong> ${stats.active_funds}</div>
+                            <div class="col-md-2"><strong>Пассивных:</strong> ${stats.passive_funds}</div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Тикер</th>
+                                    <th>Название</th>
+                                    <th>Доходность (%)</th>
+                                    <th>Риск</th>
+                                    <th>Стиль</th>
+                                    <th>География</th>
+                                    <th>Код</th>
+                                    <th>СЧА (млрд ₽)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                // Сортируем фонды по доходности (убывание)
+                funds.sort((a, b) => b.annual_return - a.annual_return);
+                
+                funds.forEach(fund => {
+                    const returnClass = fund.annual_return > 15 ? 'text-success fw-bold' : 
+                                       fund.annual_return < 0 ? 'text-danger fw-bold' : 
+                                       'text-muted';
+                    const riskColor = fund.risk_category === 'Консервативный' ? 'success' :
+                                     fund.risk_category === 'Агрессивный' ? 'danger' :
+                                     fund.risk_category === 'Высокорисковый' ? 'dark' : 'warning';
+                    
+                    fundsHtml += `
+                        <tr>
+                            <td><strong class="text-primary">${fund.ticker}</strong></td>
+                            <td><small>${fund.name || ''}</small></td>
+                            <td class="${returnClass}">${fund.annual_return}%</td>
+                            <td><span class="badge bg-${riskColor}">${fund.risk_category}</span></td>
+                            <td><small>${fund.management_style}</small></td>
+                            <td><small>${fund.geography}</small></td>
+                            <td><small><code>${fund.investment_code}</code></small></td>
+                            <td>${fund.nav_billions}</td>
+                        </tr>
+                    `;
+                });
+                
+                fundsHtml += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                
+                document.getElementById('categoryDetailBody').innerHTML = fundsHtml;
+                
+            } catch (error) {
+                console.error('Ошибка загрузки детализации:', error);
+                document.getElementById('categoryDetailBody').innerHTML = 
+                    `<div class="alert alert-danger">Ошибка загрузки детализации: ${error.message}</div>`;
+            }
+        }
+        
+        // Переключение между старой и новой классификацией
+        // === УПРОЩЕННАЯ КЛАССИФИКАЦИЯ ===
+        
+        function switchSimplifiedView(level, buttonElement) {
+            // Обновляем активную кнопку
+            const buttons = document.querySelectorAll('#level1-btn, #level2-btn');
+            buttons.forEach(btn => {
+                btn.classList.remove('active');
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-outline-secondary');
+            });
+            
+            buttonElement.classList.add('active');
+            buttonElement.classList.remove('btn-outline-secondary');
+            buttonElement.classList.add('btn-primary');
+            
+            // Загружаем упрощенную классификацию
+            loadSimplifiedSectorAnalysis(level);
+        }
+        
+        async function loadSimplifiedSectorAnalysis(level) {
+            try {
+                // Показываем спиннер пока загружается
+                const plotContainer = document.getElementById('sector-analysis-plot');
+                plotContainer.innerHTML = `
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">Загрузка данных...</p>
+                    </div>
+                `;
+                
+                const response = await fetch(`/api/simplified-analysis/${level}?view=${currentDataView}&period=${currentPeriod}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Очищаем контейнер перед отображением графика
+                plotContainer.innerHTML = '';
+                
+                // Отображаем график
+                Plotly.newPlot('sector-analysis-plot', data.plot_data.data, data.plot_data.layout, {responsive: true});
+                
+                // Добавляем обработчик кликов для показа списка фондов
+                document.getElementById('sector-analysis-plot').on('plotly_click', function(eventData) {
+                    const point = eventData.points[0];
+                    const category = point.x;
+                    
+                    showSimplifiedFundsList(category);
+                });
+                
+                // Обновляем информацию о категориях
+                updateCategoryInfo(data.total_categories, data.total_funds || 95, 'упрощенная');
+                
+            } catch (error) {
+                console.error('Ошибка загрузки упрощенной классификации:', error);
+                document.getElementById('sector-analysis-plot').innerHTML = 
+                    '<div class="alert alert-danger">Ошибка загрузки данных: ' + error.message + '</div>';
+            }
+        }
+        
+        async function showSimplifiedCategoryDetail(level, category) {
+            try {
+                // Показываем модальное окно с информацией о категории
+                const modal = new bootstrap.Modal(document.getElementById('categoryDetailModal'));
+                document.getElementById('categoryDetailTitle').innerHTML = 
+                    `<i class="fas fa-layer-group text-primary"></i> ${category}`;
+                document.getElementById('categoryDetailContent').innerHTML = 
+                    '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Загрузка данных...</p></div>';
+                modal.show();
+                
+                // Получаем детальную информацию
+                const response = await fetch(`/api/simplified-fund-detail/${category}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Отображаем информацию о категории
+                let content = `
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-1">Тип актива</h6>
+                            <p class="mb-0">${data.type || 'Неизвестно'}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-muted mb-1">География</h6>
+                            <p class="mb-0">${data.geography || 'Смешанная'}</p>
+                        </div>
+                    </div>
+                `;
+                
+                if (data.nav) {
+                    content += `
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <h6 class="text-muted mb-1">СЧА</h6>
+                                <p class="mb-0">${(data.nav / 1000).toFixed(1)} млрд ₽</p>
+                            </div>
+                            <div class="col-md-4">
+                                <h6 class="text-muted mb-1">Доходность 1 год</h6>
+                                <p class="mb-0 ${data.return_1y >= 0 ? 'text-success' : 'text-danger'}">
+                                    ${data.return_1y ? data.return_1y.toFixed(1) : '0.0'}%
+                                </p>
+                            </div>
+                            <div class="col-md-4">
+                                <h6 class="text-muted mb-1">Волатильность</h6>
+                                <p class="mb-0">${data.volatility_1y ? data.volatility_1y.toFixed(1) : '0.0'}%</p>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                content += `
+                    <div class="mt-3">
+                        <h6 class="text-muted mb-2">Управляющая компания</h6>
+                        <p class="mb-2">${data.management_company || 'Неизвестно'}</p>
+                    </div>
+                `;
+                
+                if (data.url) {
+                    content += `
+                        <div class="mt-3">
+                            <a href="${data.url}" target="_blank" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-external-link-alt me-1"></i>Подробнее на InvestFunds
+                            </a>
+                        </div>
+                    `;
+                }
+                
+                document.getElementById('categoryDetailContent').innerHTML = content;
+                
+            } catch (error) {
+                console.error('Ошибка загрузки деталей категории:', error);
+                document.getElementById('categoryDetailContent').innerHTML = 
+                    '<div class="alert alert-danger">Ошибка загрузки данных: ' + error.message + '</div>';
+            }
+        }
+        
+        function updateCategoryInfo(categories, funds, type) {
+            // Обновляем информацию о количестве категорий и фондов
+            const infoElement = document.querySelector('.sector-info');
+            if (infoElement) {
+                infoElement.innerHTML = `
+                    <small class="text-muted">
+                        ${type} классификация: ${categories} категорий, ${funds} фондов
+                    </small>
+                `;
+            }
+        }
+        
+        function switchToImproved() {
+            // Заменяем функцию переключения уровней
+            window.switch3LevelView = function(level, buttonElement) {
+                // Обновляем активную кнопку
+                const buttons = document.querySelectorAll('#level1-btn, #level2-btn');
+                buttons.forEach(btn => {
+                    btn.classList.remove('btn-primary', 'active');
+                    btn.classList.add('btn-outline-secondary');
+                });
+                
+                buttonElement.classList.remove('btn-outline-secondary');
+                buttonElement.classList.add('btn-primary', 'active');
+                
+                // Загружаем улучшенную классификацию
+                loadImprovedSectorAnalysis(level);
             };
             
-            // Обновляем график
-            Plotly.newPlot('sector-analysis-plot', newChartData, newLayout, {responsive: true});
+            // Загружаем улучшенную классификацию
+            loadImprovedSectorAnalysis('level1');
+        }
+        
+        // Показ списка фондов в категории с фильтрами
+        async function showSimplifiedFundsList(category) {
+            try {
+                const modal = new bootstrap.Modal(document.getElementById('categoryDetailModal'));
+                document.getElementById('categoryDetailTitle').innerHTML = 
+                    `<i class="fas fa-chart-bar text-primary me-2"></i>Фонды категории "${category}"`;
+                document.getElementById('categoryDetailBody').innerHTML = `
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">Загрузка списка фондов...</p>
+                    </div>
+                `;
+                modal.show();
+                
+                const response = await fetch(`/api/simplified-funds-by-category/${encodeURIComponent(category)}?view=${currentDataView}&period=${currentPeriod}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                let content = `
+                    <!-- Фильтры -->
+                    <div class="card mb-4">
+                        <div class="card-body py-3">
+                            <div class="row align-items-center">
+                                <div class="col-md-3">
+                                    <label class="form-label small text-muted mb-1">Сортировка:</label>
+                                    <select class="form-select form-select-sm" id="sortSelect" onchange="sortFundsList()">
+                                        <option value="nav">По СЧА (убыв.)</option>
+                                        <option value="return">По доходности (убыв.)</option>
+                                        <option value="volatility">По волатильности (возр.)</option>
+                                        <option value="sharpe">По Sharpe (убыв.)</option>
+                                        <option value="name">По названию (А-Я)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small text-muted mb-1">Мин. СЧА (млрд ₽):</label>
+                                    <input type="number" class="form-control form-control-sm" id="minNavFilter" 
+                                           placeholder="0.0" step="0.1" onchange="filterFundsList()">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small text-muted mb-1">Мин. доходность (%):</label>
+                                    <input type="number" class="form-control form-control-sm" id="minReturnFilter" 
+                                           placeholder="-50" step="1" onchange="filterFundsList()">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small text-muted mb-1">Поиск:</label>
+                                    <input type="text" class="form-control form-control-sm" id="searchFilter" 
+                                           placeholder="Название/тикер..." onkeyup="filterFundsList()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Счетчик фондов -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="text-muted mb-0">
+                            Показано фондов: <span class="badge bg-primary" id="visibleFundsCount">${data.funds.length}</span> 
+                            из <span id="totalFundsCount">${data.funds.length}</span>
+                        </h6>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="resetFilters()">
+                            <i class="fas fa-undo me-1"></i>Сбросить фильтры
+                        </button>
+                    </div>`;
+                
+                if (data.funds.length > 0) {
+                    content += '<div class="table-responsive">';
+                    content += '<table class="table table-hover align-middle" id="fundsTable">';
+                    content += `<thead class="table-light">
+                        <tr>
+                            <th>Тикер</th>
+                            <th>Название</th>
+                            <th>СЧА (млрд ₽)</th>
+                            <th>Доходность 1г (%)</th>
+                            <th>Волатильность (%)</th>
+                            <th>Sharpe</th>
+                            <th>УК</th>
+                        </tr>
+                    </thead><tbody id="fundsTableBody">`;
+                    
+                    data.funds.forEach(fund => {
+                        const returnClass = fund.return_1y >= 0 ? 'text-success' : 'text-danger';
+                        content += `
+                            <tr class="fund-row" 
+                                data-nav="${fund.nav_billions || 0}" 
+                                data-return="${fund.return_1y || 0}" 
+                                data-volatility="${fund.volatility || 0}" 
+                                data-sharpe="${fund.sharpe_ratio || 0}"
+                                data-name="${fund.name.toLowerCase()}"
+                                data-ticker="${fund.ticker.toLowerCase()}">
+                                <td><strong>${fund.ticker}</strong></td>
+                                <td class="text-truncate" style="max-width: 200px;" title="${fund.name}">${fund.name}</td>
+                                <td>${fund.nav_billions ? fund.nav_billions.toFixed(1) : '0.0'}</td>
+                                <td class="${returnClass}"><strong>${fund.return_1y ? fund.return_1y.toFixed(1) : '0.0'}%</strong></td>
+                                <td>${fund.volatility ? fund.volatility.toFixed(1) : '0.0'}%</td>
+                                <td>${fund.sharpe_ratio ? fund.sharpe_ratio.toFixed(2) : '0.00'}</td>
+                                <td class="small text-muted">${fund.management_company || 'Неизвестно'}</td>
+                            </tr>`;
+                    });
+                    
+                    content += '</tbody></table></div>';
+                    
+                    // Добавляем динамическую статистику
+                    content += `<div class="row mt-4" id="dynamicStats">
+                        <div class="col-md-3">
+                            <div class="text-center border rounded p-3">
+                                <h6 class="text-muted mb-1">Общая СЧА</h6>
+                                <strong id="totalNavStat">${data.total_nav.toFixed(1)} млрд ₽</strong>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center border rounded p-3">
+                                <h6 class="text-muted mb-1">Средняя доходность</h6>
+                                <strong id="avgReturnStat" class="${data.avg_return >= 0 ? 'text-success' : 'text-danger'}">${data.avg_return.toFixed(1)}%</strong>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center border rounded p-3">
+                                <h6 class="text-muted mb-1">Средняя волатильность</h6>
+                                <strong id="avgVolatilityStat">${data.avg_volatility.toFixed(1)}%</strong>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center border rounded p-3">
+                                <h6 class="text-muted mb-1">Средний Sharpe</h6>
+                                <strong id="avgSharpeStat">${data.avg_sharpe.toFixed(2)}</strong>
+                            </div>
+                        </div>
+                    </div>`;
+                } else {
+                    content += '<div class="alert alert-info">В данной категории нет фондов.</div>';
+                }
+                
+                document.getElementById('categoryDetailBody').innerHTML = content;
+                
+                // Сохраняем данные для фильтрации
+                window.currentFundsData = data.funds;
+                
+            } catch (error) {
+                console.error('Ошибка загрузки списка фондов:', error);
+                document.getElementById('categoryDetailBody').innerHTML = 
+                    '<div class="alert alert-danger">Ошибка загрузки данных: ' + error.message + '</div>';
+            }
+        }
+        
+        // Функции фильтрации и сортировки
+        function sortFundsList() {
+            const sortBy = document.getElementById('sortSelect').value;
+            const rows = Array.from(document.querySelectorAll('#fundsTableBody .fund-row:not([style*="display: none"])'));
             
-            // Обновляем сохранённые основные данные
-            window.sectorMainData = {data: newChartData, layout: newLayout};
-            
-            // Переподключаем обработчик кликов
-            document.getElementById('sector-analysis-plot').on('plotly_click', function(eventData) {
-                const point = eventData.points[0];
-                const assetGroup = point.x;
-                if (window.sectorDetailedData && window.sectorDetailedData[assetGroup]) {
-                    showDetailedSectorAnalysis(assetGroup, window.sectorDetailedData[assetGroup]);
+            rows.sort((a, b) => {
+                let aVal, bVal;
+                
+                switch(sortBy) {
+                    case 'nav':
+                        aVal = parseFloat(a.dataset.nav);
+                        bVal = parseFloat(b.dataset.nav);
+                        return bVal - aVal; // убывание
+                    case 'return':
+                        aVal = parseFloat(a.dataset.return);
+                        bVal = parseFloat(b.dataset.return);
+                        return bVal - aVal; // убывание
+                    case 'volatility':
+                        aVal = parseFloat(a.dataset.volatility);
+                        bVal = parseFloat(b.dataset.volatility);
+                        return aVal - bVal; // возрастание
+                    case 'sharpe':
+                        aVal = parseFloat(a.dataset.sharpe);
+                        bVal = parseFloat(b.dataset.sharpe);
+                        return bVal - aVal; // убывание
+                    case 'name':
+                        return a.dataset.name.localeCompare(b.dataset.name);
+                    default:
+                        return 0;
                 }
             });
             
-            // Очищаем навигационные кнопки если есть
-            clearNavigationButtons();
+            const tbody = document.getElementById('fundsTableBody');
+            rows.forEach(row => tbody.appendChild(row));
+        }
+        
+        function filterFundsList() {
+            const minNav = parseFloat(document.getElementById('minNavFilter').value) || 0;
+            const minReturn = parseFloat(document.getElementById('minReturnFilter').value) || -1000;
+            const searchTerm = document.getElementById('searchFilter').value.toLowerCase();
             
-            const viewTypeText = viewType === 'returns' ? 'доходности' : 'СЧА';
-            showAlert('Переключено отображение по ' + viewTypeText, 'info');
+            const rows = document.querySelectorAll('#fundsTableBody .fund-row');
+            let visibleCount = 0;
+            let totalNav = 0, totalReturn = 0, totalVol = 0, totalSharpe = 0;
+            
+            rows.forEach(row => {
+                const nav = parseFloat(row.dataset.nav);
+                const returnVal = parseFloat(row.dataset.return);
+                const name = row.dataset.name;
+                const ticker = row.dataset.ticker;
+                
+                const passesFilter = nav >= minNav && 
+                                   returnVal >= minReturn && 
+                                   (searchTerm === '' || name.includes(searchTerm) || ticker.includes(searchTerm));
+                
+                if (passesFilter) {
+                    row.style.display = '';
+                    visibleCount++;
+                    totalNav += nav;
+                    totalReturn += returnVal;
+                    totalVol += parseFloat(row.dataset.volatility);
+                    totalSharpe += parseFloat(row.dataset.sharpe);
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            // Обновляем счетчик и статистику
+            document.getElementById('visibleFundsCount').textContent = visibleCount;
+            
+            if (visibleCount > 0) {
+                const avgReturn = totalReturn / visibleCount;
+                document.getElementById('totalNavStat').textContent = `${totalNav.toFixed(1)} млрд ₽`;
+                document.getElementById('avgReturnStat').textContent = `${avgReturn.toFixed(1)}%`;
+                document.getElementById('avgReturnStat').className = avgReturn >= 0 ? 'text-success' : 'text-danger';
+                document.getElementById('avgVolatilityStat').textContent = `${(totalVol / visibleCount).toFixed(1)}%`;
+                document.getElementById('avgSharpeStat').textContent = `${(totalSharpe / visibleCount).toFixed(2)}`;
+            }
+        }
+        
+        function resetFilters() {
+            document.getElementById('minNavFilter').value = '';
+            document.getElementById('minReturnFilter').value = '';
+            document.getElementById('searchFilter').value = '';
+            document.getElementById('sortSelect').value = 'nav';
+            
+            // Показываем все строки
+            document.querySelectorAll('#fundsTableBody .fund-row').forEach(row => {
+                row.style.display = '';
+            });
+            
+            // Пересортировываем и обновляем статистику
+            sortFundsList();
+            filterFundsList();
+        }
+        
+        // Показ детализации категории
+        async function showCategoryDetail(level, category) {
+            try {
+                // Показываем модальное окно сразу с загрузкой
+                const modal = new bootstrap.Modal(document.getElementById('categoryDetailModal'));
+                document.getElementById('categoryDetailTitle').innerHTML = 
+                    `<i class="fas fa-layer-group me-2"></i>${category}`;
+                document.getElementById('categoryDetailBody').innerHTML = `
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">Загрузка данных категории...</p>
+                    </div>
+                `;
+                modal.show();
+                
+                const encodedCategory = encodeURIComponent(category);
+                const response = await fetch(`/api/category-detail/${level}/${encodedCategory}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Создаем список фондов в категории
+                const funds = data.funds;
+                const stats = data.statistics;
+                
+                let fundsHtml = `
+                    <div class="alert alert-primary">
+                        <h5><i class="fas fa-layer-group me-2"></i>${category}</h5>
+                        <div class="row">
+                            <div class="col-md-3"><strong>Фондов:</strong> ${stats.total_funds}</div>
+                            <div class="col-md-3"><strong>Средняя доходность:</strong> ${stats.avg_return}%</div>
+                            <div class="col-md-3"><strong>Лучший фонд:</strong> ${stats.best_fund}</div>
+                            <div class="col-md-3"><strong>Общее СЧА:</strong> ${stats.total_nav} млрд ₽</div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Тикер</th>
+                                    <th>Название</th>
+                                    <th>Доходность (%)</th>
+                                    <th>Волатильность (%)</th>
+                                    <th>Sharpe</th>
+                                    <th>СЧА (млрд ₽)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                // Сортируем фонды по доходности (убывание)
+                funds.sort((a, b) => b.annual_return - a.annual_return);
+                
+                funds.forEach(fund => {
+                    const returnClass = fund.annual_return > 15 ? 'text-success fw-bold' : 
+                                       fund.annual_return < 0 ? 'text-danger fw-bold' : 
+                                       'text-muted';
+                    fundsHtml += `
+                        <tr>
+                            <td><strong class="text-primary">${fund.ticker}</strong></td>
+                            <td><small>${fund.name || ''}</small></td>
+                            <td class="${returnClass}">${fund.annual_return}%</td>
+                            <td>${fund.volatility}%</td>
+                            <td>${fund.sharpe_ratio}</td>
+                            <td>${fund.nav_billions}</td>
+                        </tr>
+                    `;
+                });
+                
+                fundsHtml += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                
+                document.getElementById('categoryDetailBody').innerHTML = fundsHtml;
+                
+            } catch (error) {
+                console.error('Ошибка загрузки детализации:', error);
+                document.getElementById('categoryDetailBody').innerHTML = 
+                    `<div class="alert alert-danger">Ошибка загрузки детализации: ${error.message}</div>`;
+            }
         }
 
         // Обновление данных
@@ -1411,7 +2184,7 @@ HTML_TEMPLATE = """
             // Загружаем заново
             setTimeout(() => {
                 loadChart();
-                loadPlotlyChart('/api/sector-analysis', 'sector-analysis-plot');
+                load3LevelSectorAnalysis(current3LevelView);
             }, 500);
         }
 
@@ -1474,7 +2247,7 @@ HTML_TEMPLATE = """
             // Перезагружаем графики
             setTimeout(() => {
                 loadChart();
-                loadPlotlyChart('/api/sector-analysis', 'sector-analysis-plot');
+                load3LevelSectorAnalysis(current3LevelView);
                 
                 // Принудительно изменяем размер всех Plotly графиков
                 setTimeout(() => {
@@ -1537,64 +2310,111 @@ HTML_TEMPLATE = """
             }
         }
 
-        // Загрузка статистики
-        async function loadStats() {
+        // Текущий период для статистики
+        let currentStatsPeriod = '1y';
+        
+        // Загрузка статистики с учетом периода
+        async function loadStats(period = '1y') {
             try {
-                const response = await fetch('/api/stats');
+                const response = await fetch(`/api/stats?period=${period}`);
                 const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Определяем цветовые схемы для карточек
+                const getCardColor = (value, type) => {
+                    switch(type) {
+                        case 'return':
+                            return value > 15 ? 'bg-success' : value > 0 ? 'bg-primary' : 'bg-danger';
+                        case 'volatility':
+                            return value < 10 ? 'bg-success' : value < 20 ? 'bg-warning' : 'bg-danger';
+                        default:
+                            return 'bg-primary';
+                    }
+                };
+                
+                const returnColor = getCardColor(data.avg_return, 'return');
+                const volatilityColor = getCardColor(data.avg_volatility, 'volatility');
                 
                 const statsHtml = `
                     <div class="col-md-3">
-                        <div class="card stat-card">
+                        <div class="card stat-card bg-primary text-white">
                             <div class="card-body text-center">
                                 <div class="stat-number">${data.total}</div>
                                 <div>Всего ETF</div>
+                                <small class="text-light opacity-75">Возраст ≥ ${data.min_funds_age}</small>
                             </div>
                         </div>
                     </div>
                     <div class="col-md-3">
-                        <div class="card stat-card">
+                        <div class="card stat-card ${returnColor} text-white">
                             <div class="card-body text-center">
-                                <div class="stat-number">${data.avg_return}%</div>
+                                <div class="stat-number">${data.avg_return >= 0 ? '+' : ''}${data.avg_return}%</div>
                                 <div>Средняя доходность</div>
+                                <small class="text-light opacity-75">${data.period_name}</small>
                             </div>
                         </div>
                     </div>
                     <div class="col-md-3">
-                        <div class="card stat-card">
+                        <div class="card stat-card ${volatilityColor} text-white">
                             <div class="card-body text-center">
                                 <div class="stat-number">${data.avg_volatility}%</div>
                                 <div>Средняя волатильность</div>
+                                <small class="text-light opacity-75">Годовая</small>
                             </div>
                         </div>
                     </div>
                     <div class="col-md-3">
-                        <div class="card stat-card">
+                        <div class="card stat-card bg-warning text-white">
                             <div class="card-body text-center">
                                 <div class="stat-number">${data.best_etf}</div>
                                 <div>Лучший ETF</div>
+                                <small class="text-light opacity-75">+${data.best_return}% за ${data.period_name}</small>
                             </div>
                         </div>
                     </div>
                 `;
                 
                 document.getElementById('stats-section').innerHTML = statsHtml;
+                currentStatsPeriod = period;
+                
             } catch (error) {
                 console.error('Ошибка загрузки статистики:', error);
                 document.getElementById('stats-section').innerHTML = 
-                    '<div class="col-12"><div class="alert alert-danger">Ошибка загрузки статистики</div></div>';
+                    '<div class="col-12"><div class="alert alert-danger">Ошибка загрузки статистики: ' + error.message + '</div></div>';
             }
         }
-
-        // Текущий фильтр риска
-        let currentRiskFilter = 'all';
         
-        // Загрузка графика с фильтром по риску
-        async function loadChart(riskLevel = 'all') {
-            console.log(`Загружаем график риск-доходность с фильтром: ${riskLevel}...`);
+        // Обновление периода статистики
+        function updateStatsPeriod(period) {
+            currentStatsPeriod = period;
+            loadStats(period);
+        }
+
+        // Текущие фильтры графика
+        let currentRiskFilter = 'all';
+        let currentChartPeriod = '1y';
+        
+        // Загрузка графика с фильтрами по риску и времени
+        async function loadChart(riskLevel = null, period = null) {
+            // Используем текущие значения если не переданы параметры
+            const actualRiskLevel = riskLevel !== null ? riskLevel : currentRiskFilter;
+            const actualPeriod = period !== null ? period : currentChartPeriod;
+            
+            console.log(`Загружаем график риск-доходность: риск=${actualRiskLevel}, период=${actualPeriod}...`);
             
             try {
-                const url = riskLevel === 'all' ? '/api/chart' : `/api/chart?risk_level=${riskLevel}`;
+                const params = new URLSearchParams();
+                if (actualRiskLevel !== 'all') {
+                    params.append('risk_level', actualRiskLevel);
+                }
+                if (actualPeriod !== '1y') {
+                    params.append('period', actualPeriod);
+                }
+                
+                const url = `/api/chart${params.toString() ? '?' + params.toString() : ''}`;
                 const response = await fetch(url);
                 console.log('Ответ API chart:', response.status);
                 
@@ -1630,6 +2450,16 @@ HTML_TEMPLATE = """
                 document.getElementById('risk-return-plot').innerHTML = 
                     `<div class="alert alert-danger">Ошибка: ${error.message}</div>`;
             }
+            
+            // Обновляем текущие значения фильтров
+            currentRiskFilter = actualRiskLevel;
+            currentChartPeriod = actualPeriod;
+        }
+        
+        // Обновление периода графика
+        function updateChartPeriod(period) {
+            currentChartPeriod = period;
+            loadChart(null, period);
         }
         
         // Инициализация фильтров по риску
@@ -1664,11 +2494,8 @@ HTML_TEMPLATE = """
                         this.classList.add('btn-danger');
                     }
                     
-                    // Сохраняем текущий фильтр
-                    currentRiskFilter = riskLevel;
-                    
-                    // Перезагружаем график
-                    loadChart(riskLevel);
+                    // Перезагружаем график с новым фильтром риска
+                    loadChart(riskLevel, null);
                     
                     console.log(`Выбран фильтр по риску: ${riskLevel}`);
                 });
@@ -2170,41 +2997,8 @@ HTML_TEMPLATE = """
                     document.getElementById('risk-return-plot').innerHTML = '<div class="alert alert-danger">Ошибка загрузки графика</div>';
                   });
                 
-                // Секторальный анализ с интерактивностью
-                fetch('/api/sector-analysis')
-                  .then(response => response.json())
-                  .then(data => {
-                    if (data.data && data.layout) {
-                      // Очищаем контейнер от спиннера
-                      document.getElementById('sector-analysis-plot').innerHTML = '';
-                      
-                      // Создаем основной график
-                      Plotly.newPlot('sector-analysis-plot', data.data, data.layout, {responsive: true});
-                      
-                      // Сохраняем данные для детализации
-                      window.sectorDetailedData = data.detailed_data;
-                      window.sectorFundsByCategory = data.funds_by_category;
-                      window.sectorMainData = {data: data.data, layout: data.layout};
-                      window.sectorRawData = data; // Сохраняем все исходные данные
-                      window.currentSectorView = 'returns'; // По умолчанию показываем доходность
-                      
-                      // Добавляем обработчик кликов для детализации
-                      document.getElementById('sector-analysis-plot').on('plotly_click', function(eventData) {
-                        const point = eventData.points[0];
-                        const assetGroup = point.x;
-                        
-                        if (window.sectorDetailedData && window.sectorDetailedData[assetGroup]) {
-                          showDetailedSectorAnalysis(assetGroup, window.sectorDetailedData[assetGroup]);
-                        }
-                      });
-                      
-                      console.log('✅ Секторальный анализ загружен');
-                    }
-                  })
-                  .catch(error => {
-                    console.error('Ошибка загрузки сектора:', error);
-                    document.getElementById('sector-analysis-plot').innerHTML = '<div class="alert alert-danger">Ошибка загрузки анализа</div>';
-                  });
+                // Упрощенный секторальный анализ БПИФ
+                loadSimplifiedSectorAnalysis('level1');
                 
                 // Корреляционная матрица
                 fetch('/api/correlation-matrix')
@@ -2876,6 +3670,32 @@ HTML_TEMPLATE = """
             console.log('Информация о данных загружена:', dataInfo);
         }
     </script>
+    
+    <!-- Модальное окно для детализации категории -->
+    <div class="modal fade" id="categoryDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="categoryDetailTitle">
+                        <i class="fas fa-layer-group me-2"></i>Детализация категории
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="categoryDetailBody">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">Загрузка данных...</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1"></i>Закрыть
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
 """
@@ -2887,20 +3707,138 @@ def index():
 
 @app.route('/api/stats')
 def api_stats():
-    """API статистики"""
+    """API интерактивной статистики с периодами"""
     if etf_data is None:
         return jsonify({'error': 'Данные не загружены'})
     
     try:
+        # Получаем параметры фильтрации
+        period = request.args.get('period', '1y')  # Период: 1m, 3m, 6m, 1y, 3y, 5y
+        min_age_months = get_min_age_for_period(period)
+        
+        # Определяем колонку доходности
+        return_column = get_return_column_for_period(period)
+        
+        # Получаем данные с учетом возраста фондов
+        filtered_data = filter_funds_by_age(etf_data, min_age_months, return_column)
+        
+        if len(filtered_data) == 0:
+            return jsonify({
+                'total': 0,
+                'avg_return': 0,
+                'avg_volatility': 0,
+                'best_etf': 'N/A',
+                'period': period,
+                'period_name': get_period_name(period),
+                'min_funds_age': f'{min_age_months} мес',
+                'available_periods': get_available_periods()
+            })
+        
+        best_return_idx = filtered_data[return_column].idxmax()
+        
         stats = {
-            'total': len(etf_data),
-            'avg_return': round(etf_data['annual_return'].mean(), 1),
-            'avg_volatility': round(etf_data['volatility'].mean(), 1),
-            'best_etf': etf_data.loc[etf_data['annual_return'].idxmax(), 'ticker']
+            'total': len(filtered_data),
+            'avg_return': round(filtered_data[return_column].mean(), 1),
+            'avg_volatility': round(filtered_data['volatility'].mean(), 1),
+            'best_etf': filtered_data.loc[best_return_idx, 'ticker'],
+            'best_return': round(filtered_data.loc[best_return_idx, return_column], 1),
+            'period': period,
+            'period_name': get_period_name(period),
+            'min_funds_age': f'{min_age_months} мес',
+            'return_column': return_column,
+            'available_periods': get_available_periods()
         }
         return jsonify(stats)
     except Exception as e:
         return jsonify({'error': str(e)})
+
+def get_min_age_for_period(period):
+    """Возвращает минимальный возраст фонда в месяцах для корректного расчета доходности"""
+    age_requirements = {
+        '1m': 1,    # 1 месяц
+        '3m': 3,    # 3 месяца
+        '6m': 6,    # 6 месяцев
+        '1y': 12,   # 1 год
+        '3y': 36,   # 3 года
+        '5y': 60    # 5 лет
+    }
+    return age_requirements.get(period, 12)
+
+def get_return_column_for_period(period):
+    """Возвращает название колонки доходности для периода"""
+    column_mapping = {
+        '1m': 'return_1m',
+        '3m': 'return_3m', 
+        '6m': 'return_6m',
+        '1y': 'return_12m',  # или annual_return
+        '3y': 'return_36m',
+        '5y': 'return_60m'
+    }
+    return column_mapping.get(period, 'annual_return')
+
+def get_period_name(period):
+    """Возвращает человекочитаемое название периода"""
+    names = {
+        '1m': '1 месяц',
+        '3m': '3 месяца',
+        '6m': '6 месяцев', 
+        '1y': '1 год',
+        '3y': '3 года',
+        '5y': '5 лет'
+    }
+    return names.get(period, '1 год')
+
+def get_available_periods():
+    """Возвращает список доступных периодов"""
+    return [
+        {'value': '1m', 'name': '1 месяц'},
+        {'value': '3m', 'name': '3 месяца'},
+        {'value': '6m', 'name': '6 месяцев'},
+        {'value': '1y', 'name': '1 год'},
+        {'value': '3y', 'name': '3 года'},
+        {'value': '5y', 'name': '5 лет'}
+    ]
+
+def filter_funds_by_age(data, min_age_months, return_column):
+    """Фильтрует фонды по возрасту и наличию данных за период"""
+    try:
+        from investfunds_parser import InvestFundsParser
+        investfunds_parser = InvestFundsParser()
+        
+        filtered_funds = []
+        
+        for idx, fund in data.iterrows():
+            ticker = fund['ticker']
+            
+            # Проверяем наличие данных о доходности за период
+            if return_column in fund and pd.notna(fund[return_column]) and fund[return_column] != 0:
+                # Получаем дополнительную информацию о фонде для проверки возраста
+                fund_info = investfunds_parser.find_fund_by_ticker(ticker)
+                
+                if fund_info:
+                    # Если есть данные за период, считаем что фонд достаточно старый
+                    # В идеале здесь нужна дата создания фонда, но пока используем наличие данных как индикатор
+                    filtered_funds.append(fund)
+                else:
+                    # Если нет данных с InvestFunds, но есть расчетная доходность - включаем
+                    if return_column == 'annual_return':  # Для годовой доходности менее строгие требования
+                        filtered_funds.append(fund)
+        
+        if filtered_funds:
+            return pd.DataFrame(filtered_funds)
+        else:
+            # Fallback: берем все фонды с ненулевой доходностью за период
+            mask = (data[return_column].notna()) & (data[return_column] != 0)
+            return data[mask].copy()
+            
+    except Exception as e:
+        print(f"Ошибка фильтрации по возрасту: {e}")
+        # Fallback на простую фильтрацию по наличию данных
+        if return_column in data.columns:
+            mask = (data[return_column].notna()) & (data[return_column] != 0)
+            return data[mask].copy()
+        else:
+            return data.copy()
 
 def classify_risk_level(volatility, category):
     """Классификация ETF по уровням риска на основе волатильности и категории"""
@@ -2944,22 +3882,40 @@ def classify_risk_level(volatility, category):
 
 @app.route('/api/chart')
 def api_chart():
-    """API графика риск-доходность"""
+    """API графика риск-доходность с фильтрами по риску и времени"""
     if etf_data is None or len(etf_data) == 0:
         return jsonify({'error': 'Данные не загружены'})
     
     try:
         # Получаем параметры фильтрации
         risk_filter = request.args.get('risk_level', 'all')  # all, low, medium, high
+        time_period = request.args.get('period', '1y')  # 1m, 3m, 6m, 1y, 3y, 5y
+        
+        # Определяем колонку доходности для периода
+        return_column = get_return_column_for_period(time_period)
+        min_age_months = get_min_age_for_period(time_period)
+        
+        # Фильтруем фонды по возрасту и наличию данных за период
+        filtered_data = filter_funds_by_age(etf_data, min_age_months, return_column)
+        
+        if len(filtered_data) == 0:
+            return jsonify({
+                'data': [],
+                'layout': {
+                    'title': f'Риск vs Доходность - нет данных за {get_period_name(time_period)}',
+                    'xaxis': {'title': 'Волатильность (%)'},
+                    'yaxis': {'title': 'Доходность (%)'}
+                }
+            })
         
         # Добавляем классификацию по уровням риска
-        data = etf_data.copy()
+        data = filtered_data.copy()
         data['risk_level'] = data.apply(lambda row: classify_risk_level(
             row.get('volatility', 15), 
             row.get('category', '')
         ), axis=1)
         
-        # Применяем фильтр
+        # Применяем фильтр по риску
         if risk_filter != 'all':
             data = data[data['risk_level'] == risk_filter]
         
@@ -2978,9 +3934,12 @@ def api_chart():
             if len(level_data) > 0:
                 risk_labels = {'low': 'Низкий риск', 'medium': 'Средний риск', 'high': 'Высокий риск'}
                 
+                # Используем правильную колонку доходности для периода
+                return_values = level_data[return_column].fillna(0).tolist()
+                
                 fig_data.append({
                     'x': level_data['volatility'].fillna(0).tolist(),
-                    'y': level_data['annual_return'].fillna(0).tolist(),
+                    'y': return_values,
                     'text': level_data['ticker'].tolist(),
                     'customdata': [f"{ticker}<br>Категория: {category}<br>СЧА: {nav:.1f} млрд ₽" 
                                  for ticker, category, nav in zip(
@@ -2998,7 +3957,7 @@ def api_chart():
                         'opacity': 0.8
                     },
                     'hovertemplate': '<b>%{customdata}</b><br>' +
-                                   'Доходность: %{y:.1f}%<br>' +
+                                   f'Доходность ({get_period_name(time_period)}): %{{y:.1f}}%<br>' +
                                    'Волатильность: %{x:.1f}%<br>' +
                                    f'<i>{risk_labels[risk_level]}</i>' +
                                    '<extra></extra>'
@@ -3006,29 +3965,38 @@ def api_chart():
         
         # Если данных нет ни в одной категории, показываем все без группировки
         if not fig_data:
+            return_values = data[return_column].fillna(0).tolist()
             fig_data = [{
                 'x': data['volatility'].fillna(0).tolist(),
-                'y': data['annual_return'].fillna(0).tolist(),
+                'y': return_values,
                 'text': data['ticker'].tolist(),
                 'mode': 'markers',
                 'type': 'scatter',
                 'marker': {
                     'size': 8,
-                    'color': data['annual_return'].fillna(0).tolist(),
+                    'color': return_values,
                     'colorscale': 'RdYlGn',
                     'showscale': True
                 }
             }]
         
-        title_suffix = ''
+        # Формируем заголовок с учетом фильтров
+        title_parts = []
+        period_name = get_period_name(time_period)
+        
         if risk_filter != 'all':
             risk_labels = {"low": "Низкий риск", "medium": "Средний риск", "high": "Высокий риск"}
-            title_suffix = f' - {risk_labels.get(risk_filter, risk_filter)}'
+            title_parts.append(risk_labels.get(risk_filter, risk_filter))
+        
+        if time_period != '1y':
+            title_parts.append(f'за {period_name}')
+        
+        title_suffix = f' - {" | ".join(title_parts)}' if title_parts else ''
         
         layout = {
-            'title': f'Риск vs Доходность{title_suffix}',
+            'title': f'Риск vs Доходность{title_suffix} ({len(data)} фондов)',
             'xaxis': {'title': 'Волатильность (%)'},
-            'yaxis': {'title': 'Годовая доходность (%)'},
+            'yaxis': {'title': f'Доходность за {period_name} (%)'},
             'hovermode': 'closest',
             'showlegend': len(fig_data) > 1,
             'legend': {'x': 1.02, 'y': 1}
@@ -3054,6 +4022,10 @@ def api_table():
         
         # Используем исходные данные напрямую
         funds_with_nav = etf_data.copy()
+        
+        # Инициализируем новые колонки если их нет
+        if 'bid_ask_spread_pct' not in funds_with_nav.columns:
+            funds_with_nav['bid_ask_spread_pct'] = 0.0
         
         # Получаем точные данные СЧА с investfunds.ru
         try:
@@ -3092,9 +4064,19 @@ def api_table():
                     funds_with_nav.at[idx, 'return_60m'] = real_data.get('return_60m', 0)
                     
                     # Котировки и объемы
-                    funds_with_nav.at[idx, 'bid_price'] = real_data.get('bid_price', 0)
-                    funds_with_nav.at[idx, 'ask_price'] = real_data.get('ask_price', 0)
+                    bid = real_data.get('bid_price', 0)
+                    ask = real_data.get('ask_price', 0)
+                    funds_with_nav.at[idx, 'bid_price'] = bid
+                    funds_with_nav.at[idx, 'ask_price'] = ask
                     funds_with_nav.at[idx, 'volume_rub'] = real_data.get('volume_rub', 0)
+                    
+                    # Рассчитываем bid-ask spread сразу для DataFrame
+                    if bid > 0 and ask > 0 and ask >= bid:
+                        mid_price = (ask + bid) / 2
+                        bid_ask_spread = ((ask - bid) / mid_price) * 100
+                        funds_with_nav.at[idx, 'bid_ask_spread_pct'] = round(bid_ask_spread, 3)
+                    else:
+                        funds_with_nav.at[idx, 'bid_ask_spread_pct'] = 0
                     
                     # Пересчитываем волатильность и Sharpe на основе реальной доходности
                     annual_ret = real_data.get('annual_return', 0)
@@ -3133,6 +4115,8 @@ def api_table():
                     funds_with_nav.at[idx, 'real_nav'] = funds_with_nav.at[idx, 'avg_daily_value_rub'] * 50
                     funds_with_nav.at[idx, 'real_unit_price'] = funds_with_nav.at[idx, 'current_price']
                     funds_with_nav.at[idx, 'data_source'] = 'расчетное'
+                    # Устанавливаем bid_ask_spread_pct = 0 для фондов без данных
+                    funds_with_nav.at[idx, 'bid_ask_spread_pct'] = 0
         
         except Exception as e:
             print(f"Ошибка получения данных с investfunds.ru: {e}")
@@ -3140,6 +4124,8 @@ def api_table():
             funds_with_nav['real_nav'] = funds_with_nav['avg_daily_value_rub'] * 50
             funds_with_nav['real_unit_price'] = funds_with_nav['current_price']
             funds_with_nav['data_source'] = 'расчетное'
+            # Инициализируем bid_ask_spread_pct нулями для всех фондов в fallback
+            funds_with_nav['bid_ask_spread_pct'] = 0
         
         nav_column = 'real_nav'
         
@@ -3262,20 +4248,10 @@ def api_table():
                 # Котировки и объемы
                 'bid_price': round(fund.get('bid_price', 0), 4),
                 'ask_price': round(fund.get('ask_price', 0), 4),
-                'volume_rub': int(fund.get('volume_rub', 0))
+                'volume_rub': int(fund.get('volume_rub', 0)),
+                # Используем уже рассчитанное значение bid_ask_spread_pct из DataFrame
+                'bid_ask_spread_pct': round(fund.get('bid_ask_spread_pct', 0), 3)
             }
-            
-            # Рассчитываем разницу bid-ask в процентах
-            bid = fund_data['bid_price']
-            ask = fund_data['ask_price'] 
-            
-            if bid > 0 and ask > 0 and ask >= bid:
-                # Спред = (ask - bid) / ((ask + bid) / 2) * 100
-                mid_price = (ask + bid) / 2
-                bid_ask_spread = ((ask - bid) / mid_price) * 100
-                fund_data['bid_ask_spread_pct'] = round(bid_ask_spread, 3)
-            else:
-                fund_data['bid_ask_spread_pct'] = 0
             
             table_data.append(fund_data)
         
@@ -4674,6 +5650,15 @@ if __name__ == '__main__':
     if not load_etf_data():
         print("❌ Не удалось загрузить данные ETF")
         exit(1)
+    
+    # Сохраняем данные в контексте приложения для API
+    app.etf_data = etf_data
+    
+    # Регистрируем API для трёхуровневого анализа после успешной загрузки данных
+    register_3level_api(app, etf_data, bpif_classifier)
+    register_improved_api(app, etf_data, improved_bpif_classifier)
+    app.register_blueprint(simplified_bpif_bp)
+    print("✅ Зарегистрированы API endpoints для упрощенной классификации")
     
     print("✅ Данные загружены успешно")
     print("🌐 Дашборд доступен по адресу: http://localhost:5004")
