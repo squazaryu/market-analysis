@@ -5256,49 +5256,157 @@ def api_market_sentiment():
 
 @app.route('/api/sector-momentum')
 def api_sector_momentum():
-    """API анализа моментума секторов"""
+    """API анализа моментума секторов на основе реальных данных"""
     if etf_data is None:
         return jsonify({'error': 'Данные не загружены'})
     
     try:
-        analyzer = CapitalFlowAnalyzer(prepare_analyzer_data(etf_data), historical_manager)
-        momentum = analyzer.analyze_sector_momentum()
+        import numpy as np
+        from collections import defaultdict
         
-        # Создаем scatter plot моментума
-        sectors = momentum.index.tolist()
-        momentum_scores = momentum['momentum_score'].tolist()
-        returns = momentum['avg_return'].tolist()
-        volumes = momentum['volume_share'].tolist()
+        # Используем упрощенную классификацию
+        from simplified_classifier import SimplifiedBPIFClassifier
+        classifier = SimplifiedBPIFClassifier()
+        
+        # Группируем данные по типам активов
+        sector_data = defaultdict(list)
+        
+        for _, fund in etf_data.iterrows():
+            ticker = fund['ticker']
+            classification = classifier.get_fund_classification(ticker)
+            asset_type = classification.get('type', 'Неизвестно')
+            
+            if asset_type != 'Неизвестно':
+                sector_data[asset_type].append({
+                    'ticker': ticker,
+                    'annual_return': fund.get('annual_return', 0),
+                    'nav_billions': fund.get('nav_billions', 0),
+                    'volatility': fund.get('volatility', 10)
+                })
+        
+        # Анализируем моментум для каждого сектора
+        momentum_results = []
+        
+        for sector, funds in sector_data.items():
+            if not funds:
+                continue
+                
+            # Рассчитываем метрики сектора
+            returns = [f['annual_return'] for f in funds if f['annual_return'] is not None]
+            navs = [f['nav_billions'] for f in funds if f['nav_billions'] is not None]
+            volatilities = [f['volatility'] for f in funds if f['volatility'] is not None]
+            
+            if not returns:
+                continue
+                
+            avg_return = np.mean(returns)
+            total_nav = sum(navs) if navs else 0
+            avg_volatility = np.mean(volatilities) if volatilities else 10
+            
+            # Расчет моментума на основе реальных показателей
+            # Моментум = функция от доходности, размера рынка и стабильности
+            return_component = avg_return * 2  # Вес доходности
+            size_component = min(total_nav / 10, 20)  # Размер влияет, но ограничено
+            stability_component = max(20 - avg_volatility, -10)  # Низкая волатильность = плюс
+            
+            momentum_score = return_component + size_component + stability_component
+            
+            # Определение тренда
+            if momentum_score > 15:
+                trend = 'Сильный рост'
+                color = '#2E8B57'  # Зеленый
+            elif momentum_score > 5:
+                trend = 'Умеренный рост'  
+                color = '#90EE90'  # Светло-зеленый
+            elif momentum_score > -5:
+                trend = 'Стабильность'
+                color = '#FFA500'  # Оранжевый
+            elif momentum_score > -15:
+                trend = 'Умеренное падение'
+                color = '#FFA07A'  # Светло-красный
+            else:
+                trend = 'Сильное падение'
+                color = '#DC143C'  # Красный
+            
+            momentum_results.append({
+                'sector': sector,
+                'momentum_score': momentum_score,
+                'avg_return': avg_return,
+                'total_nav': total_nav,
+                'fund_count': len(funds),
+                'trend': trend,
+                'color': color,
+                'avg_volatility': avg_volatility
+            })
+        
+        # Сортируем по моментуму
+        momentum_results.sort(key=lambda x: x['momentum_score'], reverse=True)
+        
+        # Подготавливаем данные для графика
+        sectors = [r['sector'] for r in momentum_results]
+        momentum_scores = [r['momentum_score'] for r in momentum_results]
+        returns = [r['avg_return'] for r in momentum_results]
+        colors = [r['color'] for r in momentum_results]
+        
+        # Размер пузырьков пропорционален СЧА
+        sizes = [min(max(r['total_nav'] * 2, 10), 50) for r in momentum_results]
+        
+        # Hover информация
+        hover_texts = []
+        for r in momentum_results:
+            hover_text = (f"<b>{r['sector']}</b><br>"
+                         f"Моментум: {r['momentum_score']:.1f}<br>"
+                         f"Доходность: {r['avg_return']:.1f}%<br>"
+                         f"Общая СЧА: {r['total_nav']:.1f} млрд ₽<br>"
+                         f"Фондов: {r['fund_count']}<br>"
+                         f"Тренд: {r['trend']}<br>"
+                         f"Волатильность: {r['avg_volatility']:.1f}%")
+            hover_texts.append(hover_text)
         
         fig_data = [{
             'x': returns,
             'y': momentum_scores,
-            'mode': 'markers+text',
-            'type': 'scatter',
             'text': sectors,
-            'textposition': 'top center',
+            'hovertext': hover_texts,
+            'hovertemplate': '%{hovertext}<extra></extra>',
+            'mode': 'markers+text',
             'marker': {
-                'size': volumes,
-                'sizemode': 'diameter',
-                'sizeref': max(volumes) / 50,
-                'color': momentum_scores,
-                'colorscale': 'Viridis',
-                'showscale': True,
-                'colorbar': {'title': 'Моментум'}
+                'size': sizes,
+                'color': colors,
+                'opacity': 0.8,
+                'line': {'width': 2, 'color': 'white'}
             },
-            'name': 'Секторы'
+            'textposition': 'middle center',
+            'textfont': {'size': 10, 'color': 'white'},
+            'type': 'scatter',
+            'name': 'Типы активов'
         }]
         
         layout = {
-            'title': '⚡ Анализ моментума секторов',
-            'xaxis': {'title': 'Средняя доходность (%)'},
-            'yaxis': {'title': 'Индекс моментума'},
-            'height': 500
+            'title': '⚡ Анализ моментума по типам активов<br><sub>Размер пузырька = СЧА, Цвет = тренд</sub>',
+            'xaxis': {
+                'title': 'Средняя доходность (%)',
+                'gridcolor': '#f0f0f0'
+            },
+            'yaxis': {
+                'title': 'Индекс моментума',
+                'gridcolor': '#f0f0f0'
+            },
+            'height': 600,
+            'plot_bgcolor': 'white',
+            'showlegend': False,
+            'margin': {'t': 100}
         }
         
-        return jsonify({'data': fig_data, 'layout': layout})
+        return jsonify({
+            'data': fig_data, 
+            'layout': layout,
+            'momentum_summary': momentum_results
+        })
+        
     except Exception as e:
-        return jsonify({'error': str(e)})
+        import traceback
+        return jsonify({'error': f'Ошибка анализа моментума: {str(e)}', 'traceback': traceback.format_exc()})
 
 @app.route('/api/flow-insights')
 def api_flow_insights():
