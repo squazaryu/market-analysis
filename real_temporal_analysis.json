@@ -1,0 +1,48 @@
+{
+  "6 месяцев": [
+    {
+      "ticker": "LQDT",
+      "asset_type": "Облигации",
+      "return_pct": 7.8,
+      "volatility": 2.1,
+      "records": 120,
+      "nav": 100000000,
+      "first_date": "2025-02-28",
+      "last_date": "2025-08-28"
+    },
+    {
+      "ticker": "TMOS",
+      "asset_type": "Облигации",
+      "return_pct": 6.5,
+      "volatility": 3.5,
+      "records": 118,
+      "nav": 50000000,
+      "first_date": "2025-02-28",
+      "last_date": "2025-08-28"
+    }
+  ],
+  "3 месяца": [
+    {
+      "ticker": "LQDT",
+      "asset_type": "Облигации",
+      "return_pct": 3.9,
+      "volatility": 2.0,
+      "records": 60,
+      "nav": 100000000,
+      "first_date": "2025-05-28",
+      "last_date": "2025-08-28"
+    }
+  ],
+  "1 месяц": [
+    {
+      "ticker": "LQDT",
+      "asset_type": "Облигации",
+      "return_pct": 1.3,
+      "volatility": 1.8,
+      "records": 20,
+      "nav": 100000000,
+      "first_date": "2025-07-28",
+      "last_date": "2025-08-28"
+    }
+  ]
+}

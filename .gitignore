@@ -116,13 +116,20 @@ data/cache/
 *.png
 *.jpg
 *.jpeg
-*.csv
-*.json
+# *.csv - разрешаем основные CSV файлы
+# *.json - разрешаем основные JSON файлы
 *.xlsx
 *.log
 
-# Historical data files
+# Historical data files - исключаем только временные
 historical_etf_data_*.csv
+interim_classification_*.csv
+*_backup_*.csv
+
+# Временные JSON файлы
+fund_*.json
+enhanced_parsing_results_*.json
+scheduler_status.json
 
 # Temporary files
 *.tmp
@@ -143,8 +150,8 @@ Thumbs.db
 *.swp
 *.swo
 
-# Reports and documentation (keep only essential ones)
+# Reports and documentation (keep only essential ones) 
 *_20*.md
 *_20*.png
-*_20*.csv
-*_20*.json
+# *_20*.csv - НЕ исключаем основные CSV с данными!
+# *_20*.json - НЕ исключаем основные JSON с данными!

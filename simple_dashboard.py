@@ -14,16 +14,58 @@ import plotly.utils
 import json
 from datetime import datetime
 from pathlib import Path
-from capital_flow_analyzer import CapitalFlowAnalyzer
-from temporal_analysis_engine import TemporalAnalysisEngine, MarketPeriod, TimeFrame
-from historical_data_manager import HistoricalDataManager
-from full_fund_compositions import get_fund_category
-from auto_fund_classifier import classify_fund_by_name
-from bpif_3level_classifier import BPIF3LevelClassifier
-from improved_bpif_classifier import ImprovedBPIFClassifier
-from bpif_3level_api import register_3level_api
-from improved_bpif_api import register_improved_api
-from simplified_bpif_api import simplified_bpif_bp
+# Импортируем только необходимые модули из текущей директории
+try:
+    from capital_flow_analyzer import CapitalFlowAnalyzer
+except ImportError:
+    CapitalFlowAnalyzer = None
+
+try:
+    from temporal_analysis_engine import TemporalAnalysisEngine, MarketPeriod, TimeFrame
+except ImportError:
+    TemporalAnalysisEngine = None
+    MarketPeriod = None
+    TimeFrame = None
+
+try:
+    from historical_data_manager import HistoricalDataManager
+except ImportError:
+    HistoricalDataManager = None
+
+try:
+    from full_fund_compositions import get_fund_category
+except ImportError:
+    get_fund_category = lambda x: "Смешанные"
+
+try:
+    from auto_fund_classifier import classify_fund_by_name
+except ImportError:
+    classify_fund_by_name = lambda x: "Смешанные"
+
+try:
+    from bpif_3level_classifier import BPIF3LevelClassifier
+except ImportError:
+    BPIF3LevelClassifier = None
+
+try:
+    from improved_bpif_classifier import ImprovedBPIFClassifier
+except ImportError:
+    ImprovedBPIFClassifier = None
+
+try:
+    from bpif_3level_api import register_3level_api
+except ImportError:
+    register_3level_api = lambda x: None
+
+try:
+    from improved_bpif_api import register_improved_api
+except ImportError:
+    register_improved_api = lambda x: None
+
+try:
+    from simplified_bpif_api import simplified_bpif_bp
+except ImportError:
+    simplified_bpif_bp = None
 
 app = Flask(__name__)
 
@@ -261,12 +303,12 @@ def load_etf_data():
             etf_data['sharpe_ratio'] = (etf_data['annual_return'] - risk_free_rate) / etf_data['volatility']
         
         # Инициализируем анализаторы
-        historical_manager = HistoricalDataManager()
+        historical_manager = HistoricalDataManager() if HistoricalDataManager is not None else None
         analyzer_data = prepare_analyzer_data(etf_data)
-        capital_flow_analyzer = CapitalFlowAnalyzer(analyzer_data, historical_manager)
-        temporal_engine = TemporalAnalysisEngine(etf_data, historical_manager)
-        bpif_classifier = BPIF3LevelClassifier()
-        improved_bpif_classifier = ImprovedBPIFClassifier()
+        capital_flow_analyzer = CapitalFlowAnalyzer(analyzer_data, historical_manager) if CapitalFlowAnalyzer is not None else None
+        temporal_engine = TemporalAnalysisEngine(etf_data, historical_manager) if TemporalAnalysisEngine is not None else None
+        bpif_classifier = BPIF3LevelClassifier() if BPIF3LevelClassifier is not None else None
+        improved_bpif_classifier = ImprovedBPIFClassifier() if ImprovedBPIFClassifier is not None else None
         
         print(f"✅ Загружено {len(etf_data)} ETF")
         print(f"✅ Инициализированы анализаторы")
@@ -370,15 +412,31 @@ HTML_TEMPLATE = """
 
         /* Минимальная высота для графиков в accordion */
         .accordion-body [id$="-plot"],
-        .accordion-body [id*="plot"] {
+        .accordion-body [id*="plot"],
+        #temporal-chart,
+        #temporal-bar-chart {
             min-height: 500px !important;
+            width: 100% !important;
         }
         
         /* Специальные настройки для больших графиков */
         #risk-return-plot,
         #performance-analysis-plot,
-        #sector-analysis-plot {
+        #sector-analysis-plot,
+        #temporal-chart {
             min-height: 600px !important;
+            width: 100% !important;
+        }
+        
+        /* Обеспечиваем полную ширину для всех Plotly графиков */
+        .js-plotly-plot, .plotly, .plotly-graph-div {
+            width: 100% !important;
+        }
+        
+        /* Специальные стили для контейнера временного анализа */
+        #temporal-chart-container .card-body {
+            padding: 1.5rem;
+            width: 100%;
         }
 
         /* Убираем ограничения высоты для accordion body */
@@ -410,7 +468,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <nav class="navbar navbar-dark">
-        <div class="container">
+        <div class="container-fluid">
             <span class="navbar-brand">
                 <i class="fas fa-chart-line me-2"></i>
                 Простой ETF Дашборд
@@ -419,7 +477,7 @@ HTML_TEMPLATE = """
         </div>
     </nav>
 
-    <div class="container mt-4">
+    <div class="container-fluid mt-4">
         <!-- Статистика -->
         <div class="mb-4">
             <div class="row align-items-center mb-3">
@@ -534,15 +592,16 @@ HTML_TEMPLATE = """
                             </div>
                         </div>
                         
-                        <!-- График временного анализа -->
+                        <!-- Графики временного анализа -->
                         <div class="row mt-4" id="temporal-chart-container" style="display: none;">
                             <div class="col-12">
                                 <div class="card">
                                     <div class="card-header">
-                                        <h6>📈 График анализа периода</h6>
+                                        <h6>📈 Графический анализ периода</h6>
                                     </div>
                                     <div class="card-body">
-                                        <div id="temporal-chart"></div>
+                                        <div id="temporal-chart" style="min-height: 600px; width: 100%;"></div>
+                                        <!-- Дополнительный контейнер для bar chart будет создан динамически -->
                                     </div>
                                 </div>
                             </div>
@@ -589,22 +648,7 @@ HTML_TEMPLATE = """
                             <i class="fas fa-magic me-1"></i>Исправить отображение
                         </button>
                             </div>
-                            <div class="col-md-6">
-                                <h6>📊 Фильтры рекомендаций</h6>
-                        <div class="btn-group" role="group">
-                            <button class="btn btn-outline-success" onclick="filterRecs('conservative', this)">
-                                <i class="fas fa-shield-alt me-1"></i>Консерв.
-                            </button>
-                            <button class="btn btn-outline-warning" onclick="filterRecs('balanced', this)">
-                                <i class="fas fa-balance-scale me-1"></i>Сбаланс.
-                            </button>
-                            <button class="btn btn-outline-danger" onclick="filterRecs('aggressive', this)">
-                                <i class="fas fa-rocket me-1"></i>Агрессив.
-                            </button>
-                            <button class="btn btn-outline-primary active" onclick="filterRecs('all', this)">
-                                <i class="fas fa-list me-1"></i>Все
-                            </button>
-                        </div>
+                            <!-- Убираем фильтры рекомендаций из этого раздела -->
                             </div>
                         </div>
                     </div>
@@ -622,6 +666,27 @@ HTML_TEMPLATE = """
                 </h2>
                 <div id="investmentRecommendations" class="accordion-collapse collapse" data-bs-parent="#recommendationsAccordion">
                     <div class="accordion-body">
+                        <!-- Фильтры рекомендаций -->
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <h6>📊 Фильтры рекомендаций</h6>
+                                <div class="btn-group" role="group">
+                                    <button class="btn btn-outline-success" onclick="filterRecs('conservative', this)">
+                                        <i class="fas fa-shield-alt me-1"></i>Консерв.
+                                    </button>
+                                    <button class="btn btn-outline-warning" onclick="filterRecs('balanced', this)">
+                                        <i class="fas fa-balance-scale me-1"></i>Сбаланс.
+                                    </button>
+                                    <button class="btn btn-outline-danger" onclick="filterRecs('aggressive', this)">
+                                        <i class="fas fa-rocket me-1"></i>Агрессив.
+                                    </button>
+                                    <button class="btn btn-outline-primary active" onclick="filterRecs('all', this)">
+                                        <i class="fas fa-list me-1"></i>Все
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div id="recommendations-content">
                             <div class="text-center py-3">
                                 <div class="spinner-border text-primary" role="status"></div>
@@ -3596,8 +3661,36 @@ HTML_TEMPLATE = """
             fetch('/api/temporal-periods')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.market_periods) {
-                        currentPeriods = data.market_periods;
+                    // Показываем информацию об источнике данных в содержимом панели
+                    const dataInfoContent = document.getElementById('data-info-content');
+                    if (dataInfoContent) {
+                        if (data.data_source === 'MOEX API') {
+                            dataInfoContent.innerHTML = `
+                                <div class="text-success">
+                                    <i class="fas fa-check-circle"></i> <strong>${data.data_source}</strong> (реальные исторические данные)<br>
+                                    <small>${data.note || ''}</small>
+                                </div>
+                            `;
+                        } else if (data.data_source === 'synthetic') {
+                            dataInfoContent.innerHTML = `
+                                <div class="text-warning">
+                                    <i class="fas fa-exclamation-triangle"></i> <strong>Синтетические данные</strong><br>
+                                    <small>Реальные данные недоступны: ${data.error || 'неизвестная ошибка'}</small>
+                                </div>
+                            `;
+                        }
+                        
+                        // Показываем панель
+                        const dataInfoPanel = document.getElementById('data-info-panel');
+                        if (dataInfoPanel) {
+                            dataInfoPanel.style.display = 'block';
+                        }
+                    }
+                    
+                    // Определяем источник периодов
+                    const periods = data.periods || data.market_periods || [];
+                    if (periods.length > 0) {
+                        currentPeriods = periods;
                         
                         const periodSelect = document.getElementById('period-select');
                         const comparePeriodSelect = document.getElementById('compare-period-select');
@@ -3607,20 +3700,30 @@ HTML_TEMPLATE = """
                         comparePeriodSelect.innerHTML = '<option value="">Выберите период для сравнения</option>';
                         
                         // Заполняем селекты
-                        data.market_periods.forEach(period => {
-                            const option1 = new Option(period.description, period.name);
-                            const option2 = new Option(period.description, period.name);
+                        periods.forEach(period => {
+                            const option1 = new Option('', period.name);
+                            const option2 = new Option('', period.name);
                             
-                            if (period.is_current) {
-                                option1.text += ' (текущий)';
-                                option2.text += ' (текущий)';
+                            if (period.funds_count) {
+                                // Реальные данные
+                                option1.text = `${period.description} (${period.funds_count} фондов)`;
+                                option2.text = `${period.description} (${period.funds_count} фондов)`;
+                            } else {
+                                // Синтетические данные
+                                option1.text = period.description;
+                                option2.text = period.description;
+                                
+                                if (period.is_current) {
+                                    option1.text += ' (текущий)';
+                                    option2.text += ' (текущий)';
+                                }
                             }
                             
                             periodSelect.add(option1);
                             comparePeriodSelect.add(option2);
                         });
                         
-                        console.log('Загружено периодов:', data.market_periods.length);
+                        console.log('Загружено периодов:', periods.length, 'Источник:', data.data_source);
                     }
                 })
                 .catch(error => {
@@ -3629,7 +3732,7 @@ HTML_TEMPLATE = """
                 });
         }
 
-        // Анализ выбранного периода
+        // Анализ выбранного периода - обновлено для реальных данных MOEX
         function analyzePeriod() {
             const periodSelect = document.getElementById('period-select');
             const selectedPeriod = periodSelect.value;
@@ -3640,30 +3743,36 @@ HTML_TEMPLATE = """
             }
             
             // Показываем индикатор загрузки
-            showTemporalLoading('Анализ периода...');
+            showTemporalLoading('Загрузка реальных данных MOEX...');
             
             Promise.all([
                 fetch(`/api/temporal-analysis/${selectedPeriod}`).then(r => r.json()),
-                fetch(`/api/temporal-chart/${selectedPeriod}`).then(r => r.json())
+                fetch(`/api/real-temporal-chart/${selectedPeriod}`).then(r => r.json())
             ])
             .then(([analysisData, chartData]) => {
                 if (analysisData.error) {
                     throw new Error(analysisData.error);
                 }
                 
-                // Отображаем результаты анализа
-                displayPeriodAnalysis(analysisData);
+                // Отображаем результаты анализа с учетом реальных данных
+                displayRealPeriodAnalysis(analysisData);
                 
-                // Отображаем график если есть данные
-                if (!chartData.error && chartData.data) {
-                    displayTemporalChart(chartData);
+                // Отображаем графики если есть данные
+                if (!chartData.error && chartData.scatter_data) {
+                    displayRealTemporalCharts(chartData);
                 }
                 
                 // Показываем секции результатов
                 document.getElementById('temporal-results').style.display = 'block';
                 document.getElementById('temporal-chart-container').style.display = 'block';
                 
-                showAlert(`Анализ периода "${selectedPeriod}" выполнен`, 'success');
+                // Принудительно ресайзим все графики через небольшую паузу
+                setTimeout(() => {
+                    resizeTemporalCharts();
+                }, 300);
+                
+                const dataSourceText = analysisData.is_real_data ? 'на основе реальных данных MOEX' : 'на синтетических данных';
+                showAlert(`Анализ периода "${selectedPeriod}" выполнен ${dataSourceText}`, 'success');
             })
             .catch(error => {
                 console.error('Ошибка анализа периода:', error);
@@ -3731,7 +3840,86 @@ HTML_TEMPLATE = """
                 });
         }
 
-        // Отображение результатов анализа периода
+        // Отображение результатов анализа периода для реальных данных
+        function displayRealPeriodAnalysis(data) {
+            const performanceDiv = document.getElementById('period-performance');
+            const insightsDiv = document.getElementById('period-insights');
+            
+            if (data.is_real_data) {
+                // Отображение реальных данных MOEX
+                const overall = data.overall_stats;
+                const performance = data.performance;
+                
+                let perfHtml = `
+                    <div class="alert alert-success">
+                        <h6><i class="fas fa-chart-line"></i> Реальные данные MOEX API</h6>
+                        <strong>📊 Общая статистика:</strong><br>
+                        • Всего фондов: ${overall.total_funds}<br>
+                        • Средняя доходность: ${overall.avg_return}%<br>
+                        • Прибыльные фонды: ${overall.positive_funds} (${((overall.positive_funds/overall.total_funds)*100).toFixed(1)}%)<br>
+                        • Убыточные фонды: ${overall.negative_funds}<br><br>
+                        
+                        <strong>🏆 Лучший исполнитель:</strong> ${overall.best_performer.ticker} (${overall.best_performer.return_pct}%)<br>
+                        <strong>📉 Худший исполнитель:</strong> ${overall.worst_performer.ticker} (${overall.worst_performer.return_pct}%)<br>
+                    </div>
+                    
+                    <div class="row mt-3">
+                `;
+                
+                // Статистика по типам активов
+                Object.entries(performance).forEach(([assetType, stats]) => {
+                    perfHtml += `
+                        <div class="col-md-6 mb-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body">
+                                    <h6 class="card-title">${assetType}</h6>
+                                    <p class="card-text">
+                                        <strong>Фондов:</strong> ${stats.funds_count}<br>
+                                        <strong>Средняя доходность:</strong> ${stats.avg_return}%<br>
+                                        <strong>Медианная доходность:</strong> ${stats.median_return}%<br>
+                                        <strong>Волатильность:</strong> ${stats.avg_volatility.toFixed(1)}%<br>
+                                        <strong>Лучший:</strong> ${stats.best_fund[0]} (${stats.best_fund[1].toFixed(1)}%)<br>
+                                        <strong>Худший:</strong> ${stats.worst_fund[0]} (${stats.worst_fund[1].toFixed(1)}%)
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                perfHtml += '</div>';
+                performanceDiv.innerHTML = perfHtml;
+                
+                // Инсайты
+                let insightsHtml = `
+                    <h6><i class="fas fa-lightbulb"></i> Ключевые выводы по реальным данным:</h6>
+                    <ul>
+                `;
+                
+                const sortedAssets = Object.entries(performance).sort((a, b) => b[1].avg_return - a[1].avg_return);
+                if (sortedAssets.length > 0) {
+                    insightsHtml += `<li><strong>Лучший тип активов:</strong> ${sortedAssets[0][0]} со средней доходностью ${sortedAssets[0][1].avg_return}%</li>`;
+                    if (sortedAssets.length > 1) {
+                        insightsHtml += `<li><strong>Худший тип активов:</strong> ${sortedAssets[sortedAssets.length-1][0]} со средней доходностью ${sortedAssets[sortedAssets.length-1][1].avg_return}%</li>`;
+                    }
+                }
+                
+                if (overall.positive_funds > overall.negative_funds) {
+                    insightsHtml += `<li>Большинство фондов показали положительную доходность в данном периоде</li>`;
+                } else {
+                    insightsHtml += `<li>Большинство фондов показали отрицательную доходность в данном периоде</li>`;
+                }
+                
+                insightsHtml += `</ul>`;
+                insightsDiv.innerHTML = insightsHtml;
+                
+            } else {
+                // Fallback на синтетические данные
+                displayPeriodAnalysis(data);
+            }
+        }
+
+        // Отображение результатов анализа периода для синтетических данных
         function displayPeriodAnalysis(data) {
             const performanceDiv = document.getElementById('period-performance');
             const insightsDiv = document.getElementById('period-insights');
@@ -3739,6 +3927,9 @@ HTML_TEMPLATE = """
             // Производительность
             const perf = data.performance;
             performanceDiv.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i> Синтетические данные
+                </div>
                 <div class="row">
                     <div class="col-md-6">
                         <strong>📅 Период:</strong><br>
@@ -3877,7 +4068,58 @@ HTML_TEMPLATE = """
             insightsDiv.innerHTML = insightsHtml || '<p class="text-muted">Данные анализа недоступны</p>';
         }
 
-        // Отображение графика временного анализа
+        // Отображение реальных графиков временного анализа
+        function displayRealTemporalCharts(chartData) {
+            try {
+                if (chartData.scatter_data && chartData.scatter_data.data) {
+                    const scatterDiv = document.getElementById('temporal-chart');
+                    Plotly.newPlot(scatterDiv, chartData.scatter_data.data, chartData.scatter_data.layout, {responsive: true});
+                    
+                    // Добавляем обработчик ресайза
+                    setTimeout(() => {
+                        if (scatterDiv && scatterDiv.offsetParent !== null) {
+                            Plotly.Plots.resize(scatterDiv);
+                        }
+                    }, 100);
+                }
+                
+                if (chartData.bar_data && chartData.bar_data.data) {
+                    // Создаем контейнер для bar chart если его еще нет
+                    let barDiv = document.getElementById('temporal-bar-chart');
+                    if (!barDiv) {
+                        // Создаем новую карточку для второго графика  
+                        const chartContainer = document.getElementById('temporal-chart-container');
+                        const newCardHtml = `
+                            <div class="col-12 mt-3">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h6>📊 Средняя доходность по типам активов</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="temporal-bar-chart" style="min-height: 500px; width: 100%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        chartContainer.insertAdjacentHTML('beforeend', newCardHtml);
+                        barDiv = document.getElementById('temporal-bar-chart');
+                    }
+                    
+                    Plotly.newPlot(barDiv, chartData.bar_data.data, chartData.bar_data.layout, {responsive: true});
+                    
+                    // Добавляем обработчик ресайза для bar chart
+                    setTimeout(() => {
+                        if (barDiv && barDiv.offsetParent !== null) {
+                            Plotly.Plots.resize(barDiv);
+                        }
+                    }, 100);
+                }
+            } catch (error) {
+                console.error('Ошибка отображения реальных графиков:', error);
+            }
+        }
+
+        // Отображение графика временного анализа (fallback для синтетических данных)
         function displayTemporalChart(chartData) {
             try {
                 const chartDiv = document.getElementById('temporal-chart');
@@ -3906,12 +4148,41 @@ HTML_TEMPLATE = """
             
             document.getElementById('temporal-results').style.display = 'block';
         }
+        
+        // Функция принудительного ресайза графиков временного анализа
+        function resizeTemporalCharts() {
+            try {
+                const scatterDiv = document.getElementById('temporal-chart');
+                const barDiv = document.getElementById('temporal-bar-chart');
+                
+                if (scatterDiv && scatterDiv.offsetParent !== null) {
+                    Plotly.Plots.resize(scatterDiv);
+                    console.log('Resized temporal scatter chart');
+                }
+                
+                if (barDiv && barDiv.offsetParent !== null) {
+                    Plotly.Plots.resize(barDiv);
+                    console.log('Resized temporal bar chart');
+                }
+            } catch (error) {
+                console.error('Ошибка ресайза временных графиков:', error);
+            }
+        }
 
         // Загружаем периоды при инициализации
         loadTemporalPeriods();
         
         // Загружаем информацию о данных
         loadDataInfo();
+        
+        // Добавляем обработчик ресайза окна для временных графиков
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                resizeTemporalCharts();
+            }, 250);
+        });
         
         // Функция для загрузки информации о данных
         function loadDataInfo() {
@@ -5752,67 +6023,310 @@ def api_detailed_compositions():
 
 @app.route('/api/temporal-periods')
 def api_temporal_periods():
-    """API доступных временных периодов"""
-    periods = []
-    
-    for period in MarketPeriod:
-        start_str, end_str, description = period.value
-        periods.append({
-            'name': period.name,
-            'description': description,
-            'start_date': start_str,
-            'end_date': end_str or datetime.now().strftime('%Y-%m-%d'),
-            'is_current': end_str is None
+    """API доступных временных периодов - реальные данные через MOEX"""
+    try:
+        # Загружаем реальные данные
+        import json
+        with open('real_temporal_analysis.json', 'r', encoding='utf-8') as f:
+            real_data = json.load(f)
+        
+        periods = []
+        for period_name, period_data in real_data.items():
+            funds_count = len(period_data)
+            # Получаем диапазон дат из данных
+            if period_data:
+                dates = [fund['first_date'] for fund in period_data] + [fund['last_date'] for fund in period_data]
+                min_date = min(dates)
+                max_date = max(dates)
+            else:
+                min_date = max_date = 'N/A'
+            
+            periods.append({
+                'name': period_name,
+                'description': f'{period_name} (реальные данные MOEX)',
+                'start_date': min_date,
+                'end_date': max_date,
+                'funds_count': funds_count,
+                'is_real': True
+            })
+        
+        return jsonify({
+            'periods': periods,
+            'data_source': 'MOEX API',
+            'note': 'Синтетические данные заменены на реальные исторические'
         })
-    
-    timeframes = [
-        {'value': tf.value, 'name': tf.name, 'description': tf.value}
-        for tf in TimeFrame
-    ]
-    
-    return jsonify({
-        'market_periods': periods,
-        'timeframes': timeframes
-    })
+        
+    except Exception as e:
+        # Fallback на синтетические данные если нет реальных
+        periods = []
+        for period in MarketPeriod:
+            start_str, end_str, description = period.value
+            periods.append({
+                'name': period.name,
+                'description': description,
+                'start_date': start_str,
+                'end_date': end_str or datetime.now().strftime('%Y-%m-%d'),
+                'is_current': end_str is None,
+                'is_real': False
+            })
+        
+        timeframes = [
+            {'value': tf.value, 'name': tf.name, 'description': tf.value}
+            for tf in TimeFrame
+        ]
+        
+        return jsonify({
+            'market_periods': periods,
+            'timeframes': timeframes,
+            'data_source': 'synthetic',
+            'error': f'Не удалось загрузить реальные данные: {str(e)}'
+        })
 
 @app.route('/api/temporal-analysis/<period_name>')
 def api_temporal_analysis(period_name):
-    """API временного анализа для указанного периода"""
-    if temporal_engine is None:
-        return jsonify({'error': 'Временной анализатор не инициализирован'})
-    
+    """API временного анализа для указанного периода - реальные данные MOEX"""
     try:
-        # Получаем период по имени
-        period = None
-        for p in MarketPeriod:
-            if p.name == period_name:
-                period = p
-                break
+        # Загружаем реальные данные
+        import json
+        with open('real_temporal_analysis.json', 'r', encoding='utf-8') as f:
+            real_data = json.load(f)
         
-        if period is None:
-            return jsonify({'error': f'Период {period_name} не найден'})
+        if period_name not in real_data:
+            return jsonify({'error': f'Период {period_name} не найден в реальных данных'})
         
-        # Создаем фильтр и анализируем
-        temp_filter = temporal_engine.get_market_period_filter(period)
-        performance = temporal_engine.calculate_period_performance(temp_filter)
-        insights = temporal_engine.generate_temporal_insights(temp_filter)
+        period_data = real_data[period_name]
         
-        # Конвертируем в JSON-совместимые типы
+        if not period_data:
+            return jsonify({'error': f'Нет данных для периода {period_name}'})
+        
+        # Вычисляем статистику по типам активов
+        asset_performance = {}
+        for fund in period_data:
+            asset_type = fund['asset_type']
+            if asset_type not in asset_performance:
+                asset_performance[asset_type] = {
+                    'returns': [],
+                    'volatilities': [],
+                    'funds': []
+                }
+            
+            asset_performance[asset_type]['returns'].append(fund['return_pct'])
+            asset_performance[asset_type]['volatilities'].append(fund['volatility'])
+            asset_performance[asset_type]['funds'].append(fund['ticker'])
+        
+        # Создаем итоговую статистику
+        performance_summary = {}
+        for asset_type, data in asset_performance.items():
+            returns = data['returns']
+            volatilities = data['volatilities']
+            
+            performance_summary[asset_type] = {
+                'avg_return': round(sum(returns) / len(returns), 2),
+                'median_return': round(sorted(returns)[len(returns)//2], 2),
+                'avg_volatility': round(sum(volatilities) / len(volatilities), 2),
+                'best_fund': max(zip(data['funds'], returns), key=lambda x: x[1]),
+                'worst_fund': min(zip(data['funds'], returns), key=lambda x: x[1]),
+                'funds_count': len(data['funds']),
+                'max_return': max(returns),
+                'min_return': min(returns)
+            }
+        
+        # Общая статистика
+        all_returns = [fund['return_pct'] for fund in period_data]
+        overall_stats = {
+            'total_funds': len(period_data),
+            'avg_return': round(sum(all_returns) / len(all_returns), 2),
+            'positive_funds': len([r for r in all_returns if r > 0]),
+            'negative_funds': len([r for r in all_returns if r < 0]),
+            'best_performer': max(period_data, key=lambda x: x['return_pct']),
+            'worst_performer': min(period_data, key=lambda x: x['return_pct'])
+        }
+        
         result = {
             'period': {
-                'name': period.name,
-                'description': period.value[2],
-                'start_date': period.value[0],
-                'end_date': period.value[1] or datetime.now().strftime('%Y-%m-%d')
+                'name': period_name,
+                'description': f'{period_name} (реальные данные MOEX)',
+                'data_source': 'MOEX API'
             },
-            'performance': convert_to_json_serializable(performance),
-            'insights': convert_to_json_serializable(insights)
+            'performance': performance_summary,
+            'overall_stats': overall_stats,
+            'raw_data': period_data,
+            'is_real_data': True
         }
         
         return jsonify(result)
         
     except Exception as e:
-        return jsonify({'error': str(e)})
+        # Fallback на синтетические данные
+        if temporal_engine is None:
+            return jsonify({'error': f'Реальные данные недоступны: {str(e)}. Временной анализатор не инициализирован'})
+        
+        try:
+            # Получаем период по имени
+            period = None
+            for p in MarketPeriod:
+                if p.name == period_name:
+                    period = p
+                    break
+            
+            if period is None:
+                return jsonify({'error': f'Период {period_name} не найден'})
+            
+            # Создаем фильтр и анализируем
+            temp_filter = temporal_engine.get_market_period_filter(period)
+            performance = temporal_engine.calculate_period_performance(temp_filter)
+            insights = temporal_engine.generate_temporal_insights(temp_filter)
+            
+            result = {
+                'period': {
+                    'name': period.name,
+                    'description': period.value[2],
+                    'start_date': period.value[0],
+                    'end_date': period.value[1] or datetime.now().strftime('%Y-%m-%d')
+                },
+                'performance': convert_to_json_serializable(performance),
+                'insights': convert_to_json_serializable(insights),
+                'is_real_data': False,
+                'note': f'Используются синтетические данные из-за ошибки: {str(e)}'
+            }
+            
+            return jsonify(result)
+            
+        except Exception as e2:
+            return jsonify({'error': f'Ошибки и с реальными, и с синтетическими данными: {str(e)}, {str(e2)}'})
+
+@app.route('/api/real-temporal-chart/<period_name>')
+def api_real_temporal_chart(period_name):
+    """API графика для реального временного анализа на основе MOEX данных"""
+    try:
+        # Загружаем реальные данные
+        import json
+        with open('real_temporal_analysis.json', 'r', encoding='utf-8') as f:
+            real_data = json.load(f)
+        
+        if period_name not in real_data:
+            return jsonify({'error': f'Период {period_name} не найден в реальных данных'})
+        
+        period_data = real_data[period_name]
+        
+        if not period_data:
+            return jsonify({'error': f'Нет данных для периода {period_name}'})
+        
+        # Создаем данные для scatter plot (доходность vs волатильность)
+        scatter_data = {
+            'data': [],
+            'layout': {
+                'title': f'💹 Риск vs Доходность - {period_name}<br><sub>реальные данные MOEX API</sub>',
+                'xaxis': {'title': 'Волатильность (%)'},
+                'yaxis': {'title': 'Доходность (%)'},
+                'hovermode': 'closest',
+                'height': 600,
+                'width': None,  # Автоматическая ширина
+                'autosize': True,
+                'margin': {'l': 60, 'r': 30, 't': 80, 'b': 60}
+            }
+        }
+        
+        # Группируем по типам активов
+        asset_groups = {}
+        for fund in period_data:
+            asset_type = fund['asset_type']
+            if asset_type not in asset_groups:
+                asset_groups[asset_type] = {
+                    'x': [],  # volatility
+                    'y': [],  # returns
+                    'text': [],  # hover text
+                    'name': asset_type
+                }
+            
+            asset_groups[asset_type]['x'].append(fund['volatility'])
+            asset_groups[asset_type]['y'].append(fund['return_pct'])
+            asset_groups[asset_type]['text'].append(
+                f"<b>{fund['ticker']}</b><br>"
+                f"Тип: {fund['asset_type']}<br>"
+                f"Доходность: {fund['return_pct']:.2f}%<br>"
+                f"Волатильность: {fund['volatility']:.2f}%<br>"
+                f"Период: {fund['first_date']} - {fund['last_date']}<br>"
+                f"Торговых дней: {fund['records']}"
+            )
+        
+        # Цветовая схема для типов активов
+        colors = {
+            'Акции': '#FF6B6B',
+            'Облигации': '#4ECDC4', 
+            'Деньги': '#45B7D1',
+            'Сырье': '#FFA07A',
+            'Смешанные': '#98D8C8'
+        }
+        
+        # Создаем traces для scatter plot
+        for asset_type, group_data in asset_groups.items():
+            scatter_data['data'].append({
+                'x': group_data['x'],
+                'y': group_data['y'],
+                'text': group_data['text'],
+                'name': asset_type,
+                'type': 'scatter',
+                'mode': 'markers',
+                'marker': {
+                    'color': colors.get(asset_type, 'gray'),
+                    'size': 12,
+                    'opacity': 0.8,
+                    'line': {'color': 'white', 'width': 1}
+                },
+                'hovertemplate': '%{text}<extra></extra>'
+            })
+        
+        # Создаем bar chart по типам активов
+        asset_performance = {}
+        for fund in period_data:
+            asset_type = fund['asset_type']
+            if asset_type not in asset_performance:
+                asset_performance[asset_type] = []
+            asset_performance[asset_type].append(fund['return_pct'])
+        
+        bar_data = {
+            'data': [{
+                'x': list(asset_performance.keys()),
+                'y': [round(sum(returns)/len(returns), 2) for returns in asset_performance.values()],
+                'type': 'bar',
+                'name': 'Средняя доходность',
+                'marker': {'color': [colors.get(asset, 'gray') for asset in asset_performance.keys()]},
+                'text': [f"{sum(returns)/len(returns):.2f}%" for returns in asset_performance.values()],
+                'textposition': 'outside',
+                'hovertemplate': '<b>%{x}</b><br>' +
+                               'Средняя доходность: %{y}%<br>' +
+                               'Фондов: ' + str([len(returns) for returns in asset_performance.values()]) + '<br>' +
+                               '<extra></extra>'
+            }],
+            'layout': {
+                'title': f'📊 Средняя доходность по типам активов - {period_name}',
+                'xaxis': {'title': 'Тип актива'},
+                'yaxis': {'title': 'Средняя доходность (%)'},
+                'showlegend': False,
+                'height': 500,
+                'width': None,  # Автоматическая ширина
+                'autosize': True,
+                'margin': {'l': 60, 'r': 30, 't': 80, 'b': 60}
+            }
+        }
+        
+        result = {
+            'period': {
+                'name': period_name,
+                'description': f'{period_name} (реальные данные MOEX)',
+                'data_source': 'MOEX API',
+                'total_funds': len(period_data)
+            },
+            'scatter_data': scatter_data,
+            'bar_data': bar_data,
+            'is_real_data': True
+        }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': f'Ошибка загрузки реальных данных: {str(e)}'})
 
 @app.route('/api/crisis-impact')
 def api_crisis_impact():
@@ -6171,9 +6685,12 @@ if __name__ == '__main__':
     app.etf_data = etf_data
     
     # Регистрируем API для трёхуровневого анализа после успешной загрузки данных
-    register_3level_api(app, etf_data, bpif_classifier)
-    register_improved_api(app, etf_data, improved_bpif_classifier)
-    app.register_blueprint(simplified_bpif_bp)
+    if register_3level_api is not None and BPIF3LevelClassifier is not None:
+        register_3level_api(app, etf_data, bpif_classifier)
+    if register_improved_api is not None and ImprovedBPIFClassifier is not None:
+        register_improved_api(app, etf_data, improved_bpif_classifier)
+    if simplified_bpif_bp is not None:
+        app.register_blueprint(simplified_bpif_bp)
     print("✅ Зарегистрированы API endpoints для упрощенной классификации")
     
     print("✅ Данные загружены успешно")
