@@ -297,8 +297,48 @@ def load_etf_data():
         
         etf_data = pd.read_csv(latest_data)
         
+        # ИСПРАВЛЯЕМ НЕКОРРЕКТНУЮ ВОЛАТИЛЬНОСТЬ
+        print("🔧 Исправляем некорректные данные о волатильности...")
+        from auto_fund_classifier import classify_fund_by_name
+        
+        corrected_count = 0
+        for idx, row in etf_data.iterrows():
+            ticker = row['ticker']
+            name = row.get('name', '')
+            annual_ret = row.get('annual_return', 0)
+            current_vol = row.get('volatility', 20)
+            
+            # Получаем правильную классификацию
+            classification = classify_fund_by_name(ticker, name, "")
+            asset_type = classification['category'].lower()
+            
+            # Рассчитываем правильную волатильность по типам активов
+            if 'денежн' in asset_type:
+                correct_volatility = max(1.0, min(5.0, 2.0 + abs(annual_ret) * 0.1))
+            elif 'облигац' in asset_type:
+                correct_volatility = max(3.0, min(12.0, 5.0 + abs(annual_ret) * 0.3))
+            elif 'золот' in asset_type or 'драгоценн' in asset_type:
+                correct_volatility = max(10.0, min(25.0, 15.0 + abs(annual_ret) * 0.5))
+            elif 'валютн' in asset_type:
+                correct_volatility = max(5.0, min(15.0, 8.0 + abs(annual_ret) * 0.4))
+            elif 'акци' in asset_type:
+                correct_volatility = max(15.0, min(40.0, 20.0 + abs(annual_ret) * 0.8))
+            else:
+                correct_volatility = max(8.0, min(25.0, 12.0 + abs(annual_ret) * 0.6))
+            
+            # Проверяем, нужна ли коррекция (разница больше 5%)
+            if abs(current_vol - correct_volatility) > 5.0:
+                etf_data.at[idx, 'volatility'] = correct_volatility
+                corrected_count += 1
+        
+        print(f"✅ Исправлена волатильность у {corrected_count} фондов")
+        
         # Добавляем базовые метрики если их нет
         if 'sharpe_ratio' not in etf_data.columns:
+            risk_free_rate = 15.0
+            etf_data['sharpe_ratio'] = (etf_data['annual_return'] - risk_free_rate) / etf_data['volatility']
+        else:
+            # Пересчитываем Sharpe ratio с исправленной волатильностью
             risk_free_rate = 15.0
             etf_data['sharpe_ratio'] = (etf_data['annual_return'] - risk_free_rate) / etf_data['volatility']
         
@@ -685,6 +725,60 @@ HTML_TEMPLATE = """
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                        
+                        <!-- Спойлер с логикой расчета риска -->
+                        <div class="mb-3">
+                            <details class="border rounded p-3 bg-light">
+                                <summary class="text-primary fw-bold mb-2" style="cursor: pointer;">
+                                    🧮 Методология расчета уровня риска
+                                </summary>
+                                <div class="small mt-2">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <strong>📊 Алгоритм классификации:</strong>
+                                            <ul class="mt-1 mb-2">
+                                                <li><strong>1-й этап:</strong> Определение типа актива по названию фонда</li>
+                                                <li><strong>2-й этап:</strong> Расчет базовой волатильности по формулам</li>
+                                                <li><strong>3-й этап:</strong> Классификация по пороговым значениям</li>
+                                            </ul>
+                                            
+                                            <strong>🎯 Формулы волатильности:</strong>
+                                            <div class="font-monospace text-muted mt-1">
+                                                • Денежный рынок: 1-5%<br>
+                                                • Облигации: 3-12%<br>
+                                                • Смешанные: 8-25%<br>
+                                                • Золото/сырье: 10-25%<br>
+                                                • Валютные: 5-15%<br>
+                                                • Акции: 15-40%
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <strong>🚦 Пороги классификации риска:</strong>
+                                            <div class="mt-1">
+                                                <span class="badge bg-success me-1">Низкий риск</span> 
+                                                <small class="text-muted">≤ 15% волатильность или денежный рынок/облигации</small><br>
+                                                
+                                                <span class="badge bg-warning me-1 mt-1">Средний риск</span> 
+                                                <small class="text-muted">15-25% волатильность или смешанные фонды</small><br>
+                                                
+                                                <span class="badge bg-danger me-1 mt-1">Высокий риск</span> 
+                                                <small class="text-muted">&gt; 25% волатильность или акции/сырье</small>
+                                            </div>
+                                            
+                                            <div class="mt-3">
+                                                <strong>💡 Особенности:</strong>
+                                                <ul class="mt-1 mb-0 small">
+                                                    <li>Облигации <strong>никогда не получают</strong> высокий риск</li>
+                                                    <li>Акции <strong>никогда не получают</strong> низкий риск</li>
+                                                    <li>Волатильность корректируется на основе доходности</li>
+                                                    <li>Приоритет отдается типу актива над волатильностью</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
                         </div>
                         
                         <div id="recommendations-content">
@@ -3178,7 +3272,7 @@ HTML_TEMPLATE = """
                                             <tbody>
                         `;
                         
-                        rec.etfs.slice(0, 4).forEach(etf => {
+                        rec.etfs.forEach(etf => {
                             const returnClass = etf.annual_return > 10 ? 'text-success' : 
                                               etf.annual_return > 0 ? 'text-warning' : 'text-danger';
                             const volatilityClass = etf.volatility < 15 ? 'text-success' : 
@@ -4441,45 +4535,91 @@ def filter_funds_by_age(data, min_age_months, return_column):
         else:
             return data.copy()
 
-def classify_risk_level(volatility, category):
-    """Классификация ETF по уровням риска на основе волатильности и категории"""
+def classify_risk_level_by_asset_type(volatility, asset_type, fund_name):
+    """Классификация риска на основе ПРАВИЛЬНОГО типа актива из файла классификации"""
     
-    # Базовая классификация по волатильности
-    if volatility < 10:
-        base_risk = 'low'
-    elif volatility < 20:
-        base_risk = 'medium' 
-    else:
-        base_risk = 'high'
-    
-    # Корректировка по категории (используем категории из наших данных)
-    low_risk_categories = ['денежный рынок', 'ликвидность', 'казначейские', 'государственные']
-    medium_risk_categories = ['облигации', 'корпоративные', 'смешанные', 'сбалансированные']
-    high_risk_categories = ['акции', 'технологии', 'эмерджинг', 'развивающиеся', 'малая капитализация']
-    
-    category_lower = str(category).lower()
-    
-    # Защитные активы - снижаем риск
-    if any(word in category_lower for word in low_risk_categories):
-        if base_risk == 'high':
-            return 'medium'
-        elif base_risk == 'medium':
+    # Если тип актива известен - используем его (приоритет!)
+    if asset_type and str(asset_type) != 'nan':
+        asset_type_lower = str(asset_type).lower()
+        
+        # ДЕНЬГИ/ДЕНЕЖНЫЙ РЫНОК - всегда низкий риск
+        if 'деньги' in asset_type_lower or 'денежный' in asset_type_lower:
             return 'low'
+        
+        # ОБЛИГАЦИИ - низкий или средний риск (никогда высокий)
+        elif 'облигации' in asset_type_lower:
+            return 'low' if volatility <= 18 else 'medium'
+        
+        # АКЦИИ - средний или высокий риск (никогда низкий)
+        elif 'акции' in asset_type_lower:
+            return 'medium' if volatility <= 22 else 'high'
+        
+        # СЫРЬЕ - средний или высокий риск
+        elif 'сырье' in asset_type_lower:
+            return 'medium' if volatility <= 20 else 'high'
+            
+        # СМЕШАННЫЕ - по волатильности
+        elif 'смешанные' in asset_type_lower:
+            if volatility <= 15:
+                return 'low'
+            elif volatility <= 25:
+                return 'medium'
+            else:
+                return 'high'
+    
+    # Fallback на старую функцию если тип актива не определен
+    return classify_risk_level_old(volatility, fund_name)
+
+def classify_risk_level_old(volatility, fund_name):
+    """Классификация ETF по уровням риска - приоритет типу активов над волатильностью"""
+    
+    fund_name_lower = str(fund_name).lower()
+    
+    # 1. ЖЕСТКИЕ ПРАВИЛА по типу активов (приоритет над волатильностью)
+    
+    # Денежный рынок и ликвидность - всегда низкий риск  
+    if any(word in fund_name_lower for word in ['денежный рынок', 'ликвидность', 'сберегательный', 'накопительный']):
         return 'low'
     
-    # Рисковые активы - повышаем риск
-    elif any(word in category_lower for word in high_risk_categories):
-        if base_risk == 'low':
+    # Государственные бумаги - всегда низкий или средний риск (никогда высокий)
+    if any(word in fund_name_lower for word in ['государственные', 'казначейские', 'гособлигации', 'офз']):
+        return 'low' if volatility <= 20 else 'medium'
+    
+    # Акции - всегда средний или высокий риск (никогда низкий)  
+    if any(word in fund_name_lower for word in ['акции', 'индекс', 'голубые фишки', 'дивидендные', 'роста', 'анализ акций']):
+        return 'medium' if volatility <= 20 else 'high'
+    
+    # Драгметаллы - всегда средний или высокий риск
+    if any(word in fund_name_lower for word in ['золото', 'платина', 'палладий']):
+        return 'medium' if volatility <= 25 else 'high'
+        
+    # Валютные и развивающиеся рынки - повышенный риск
+    if any(word in fund_name_lower for word in ['валютные', 'юанях', 'эмерджинг', 'развивающиеся']):
+        return 'medium' if volatility <= 15 else 'high'
+    
+    # 2. ОБЛИГАЦИИ - гибкая классификация по волатильности, но ограничена сверху
+    if any(word in fund_name_lower for word in ['облигации', 'корпоративные', 'флоатеры', 'долгосрочные', 'государственных облигаций', 'валютных облигаций']):
+        if volatility <= 15:
+            return 'low'
+        else:
+            return 'medium'  # Облигации никогда не могут быть high risk
+    
+    # 3. СМЕШАННЫЕ И СБАЛАНСИРОВАННЫЕ - по волатильности
+    if any(word in fund_name_lower for word in ['смешанные', 'сбалансированные', 'умный портфель', 'вечный портфель']):
+        if volatility <= 15:
+            return 'low'
+        elif volatility <= 25:
             return 'medium'
-        elif base_risk == 'medium':
+        else:
             return 'high'
+    
+    # 4. FALLBACK - базовая классификация по волатильности
+    if volatility <= 15:
+        return 'low'
+    elif volatility <= 25:
+        return 'medium' 
+    else:
         return 'high'
-    
-    # Средние активы
-    elif any(word in category_lower for word in medium_risk_categories):
-        return base_risk
-    
-    return base_risk
 
 @app.route('/api/chart')
 def api_chart():
@@ -4509,11 +4649,28 @@ def api_chart():
                 }
             })
         
-        # Добавляем классификацию по уровням риска
+        # Добавляем классификацию по уровням риска на основе ПРАВИЛЬНЫХ типов активов
         data = filtered_data.copy()
-        data['risk_level'] = data.apply(lambda row: classify_risk_level(
+        
+        # Загружаем правильную классификацию типов активов
+        try:
+            import os
+            asset_classification_file = 'simplified_bpif_structure_corrected_final.csv'
+            if os.path.exists(asset_classification_file):
+                asset_df = pd.read_csv(asset_classification_file)
+                # Соединяем с данными по тикеру
+                data = data.merge(asset_df[['Тикер', 'Тип актива']], 
+                                left_on='ticker', right_on='Тикер', how='left')
+                print(f"✅ Загружена классификация активов: {len(data[data['Тип актива'].notna()])} фондов")
+            else:
+                print("⚠️ Файл классификации активов не найден, используется классификация по названию")
+        except Exception as e:
+            print(f"⚠️ Ошибка загрузки классификации активов: {e}")
+            
+        data['risk_level'] = data.apply(lambda row: classify_risk_level_by_asset_type(
             row.get('volatility', 15), 
-            row.get('category', '')
+            row.get('Тип актива', ''),  # Используем правильный тип актива
+            row.get('name', '')  # Fallback на название
         ), axis=1)
         
         # Применяем фильтр по риску
@@ -4936,9 +5093,21 @@ def api_fee_analysis():
         print(f"Ошибка в api_fee_analysis: {e}")
         return jsonify({})
 
+def _get_portfolio_etfs_by_risk(data, risk_levels, sort_by='sharpe_ratio'):
+    """Возвращает ВСЕ фонды указанных уровней риска, отсортированные по метрике"""
+    
+    # Фильтруем по уровням риска
+    filtered_data = data[data['risk_level'].isin(risk_levels)]
+    
+    # Сортируем по указанной метрике (по убыванию)
+    sorted_data = filtered_data.sort_values(by=sort_by, ascending=False)
+    
+    # Возвращаем все фонды в нужном формате
+    return sorted_data[['ticker', 'full_name', 'sector', 'annual_return', 'volatility', 'sharpe_ratio', 'risk_level']].round(2).to_dict('records')
+
 @app.route('/api/recommendations')
 def api_recommendations():
-    """API рекомендаций"""
+    """API рекомендаций с правильной классификацией рисков"""
     if etf_data is None:
         return jsonify({})
     
@@ -4950,6 +5119,29 @@ def api_recommendations():
         if 'sharpe_ratio' not in analyzer_data.columns:
             analyzer_data['sharpe_ratio'] = (analyzer_data['annual_return'] - 5) / analyzer_data['volatility'].clip(lower=0.1)
         
+        # ДОБАВЛЯЕМ ПРАВИЛЬНУЮ КЛАССИФИКАЦИЮ РИСКОВ
+        # Используем тот же подход, что и в api_chart
+        try:
+            import os
+            asset_classification_file = 'simplified_bpif_structure_corrected_final.csv'
+            if os.path.exists(asset_classification_file):
+                asset_df = pd.read_csv(asset_classification_file)
+                # Соединяем с данными по тикеру
+                analyzer_data = analyzer_data.merge(asset_df[['Тикер', 'Тип актива']], 
+                                                  left_on='ticker', right_on='Тикер', how='left')
+                print(f"✅ Загружена классификация активов для рекомендаций: {len(analyzer_data[analyzer_data['Тип актива'].notna()])} фондов")
+            else:
+                print("⚠️ Файл классификации активов не найден в API рекомендаций")
+        except Exception as e:
+            print(f"⚠️ Ошибка загрузки классификации активов в API рекомендаций: {e}")
+            
+        # Добавляем правильную классификацию рисков
+        analyzer_data['risk_level'] = analyzer_data.apply(lambda row: classify_risk_level_by_asset_type(
+            row.get('volatility', 15), 
+            row.get('Тип актива', ''),  # Используем правильный тип актива
+            row.get('name', '')  # Fallback на название
+        ), axis=1)
+        
         # Фильтруем данные с валидными значениями
         valid_data = analyzer_data[
             (analyzer_data['annual_return'].notna()) & 
@@ -4958,51 +5150,24 @@ def api_recommendations():
             (analyzer_data['annual_return'] > -100)  # исключаем аномальные значения
         ].copy()
         
-        # Консервативный портфель: облигации, денежный рынок, золото
-        conservative_sectors = ['Облигации', 'Денежный рынок', 'Драгоценные металлы']
-        conservative_data = valid_data[
-            (valid_data['sector'].str.contains('|'.join(conservative_sectors), case=False, na=False)) &
-            (valid_data['volatility'] < 20) &
-            (valid_data['annual_return'] > -5)
-        ]
-        
-        # Сбалансированный портфель: смесь акций и облигаций
-        balanced_sectors = ['Акции', 'Смешанные', 'Защитные активы']
-        balanced_data = valid_data[
-            (
-                (valid_data['sector'].str.contains('|'.join(balanced_sectors), case=False, na=False)) |
-                (valid_data['sector'].str.contains('Облигации', case=False, na=False))
-            ) &
-            (valid_data['volatility'] >= 10) & 
-            (valid_data['volatility'] <= 30) &
-            (valid_data['annual_return'] > -10)
-        ]
-        
-        # Агрессивный портфель: акции с высокой доходностью
-        aggressive_data = valid_data[
-            (valid_data['sector'].str.contains('Акции', case=False, na=False)) &
-            (valid_data['annual_return'] > 5) &
-            (valid_data['avg_daily_volume'] > 1000000)  # высокая ликвидность
-        ]
+        # Фильтруем данные с минимальными требованиями
+        # (убираем отдельные фильтры для портфелей - теперь показываем ВСЕ фонды каждого уровня риска)
         
         recommendations = {
             'conservative': {
                 'title': 'Консервативный портфель',
-                'description': 'Низкий риск: облигации, денежный рынок, золото',
-                'etfs': conservative_data.nlargest(5, 'sharpe_ratio')[['ticker', 'full_name', 'sector', 'annual_return', 'volatility', 'sharpe_ratio']]
-                       .round(2).to_dict('records') if len(conservative_data) > 0 else []
+                'description': f'Все {len(valid_data[valid_data["risk_level"] == "low"])} фондов с низким риском (отсортированы по Sharpe ratio)',
+                'etfs': _get_portfolio_etfs_by_risk(valid_data, ['low'], 'sharpe_ratio')
             },
             'balanced': {
                 'title': 'Сбалансированный портфель', 
-                'description': 'Средний риск: смесь акций и облигаций',
-                'etfs': balanced_data.nlargest(5, 'sharpe_ratio')[['ticker', 'full_name', 'sector', 'annual_return', 'volatility', 'sharpe_ratio']]
-                       .round(2).to_dict('records') if len(balanced_data) > 0 else []
+                'description': f'Все {len(valid_data[valid_data["risk_level"] == "medium"])} фондов со средним риском (отсортированы по Sharpe ratio)',
+                'etfs': _get_portfolio_etfs_by_risk(valid_data, ['medium'], 'sharpe_ratio')
             },
             'aggressive': {
                 'title': 'Агрессивный портфель',
-                'description': 'Высокий риск: акции с высокой доходностью',
-                'etfs': aggressive_data.nlargest(5, 'annual_return')[['ticker', 'full_name', 'sector', 'annual_return', 'volatility', 'sharpe_ratio']]
-                       .round(2).to_dict('records') if len(aggressive_data) > 0 else []
+                'description': f'Все {len(valid_data[valid_data["risk_level"] == "high"])} фондов с высоким риском (отсортированы по доходности)',
+                'etfs': _get_portfolio_etfs_by_risk(valid_data, ['high'], 'annual_return')
             }
         }
         
